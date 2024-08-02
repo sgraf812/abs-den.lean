@@ -31,3 +31,11 @@ def eval [Trace d] [Domain d] [HasBind d] (ρ : FinMap Name d) : Exp → d
       | Option.some d => step Event.app1 (ap (eval ρ e) d)
   | Exp.let x e₁ e₂ => bind x (λ d₁ =>                  eval (ρ[x↦step (Event.look x) d₁]) e₁)
                               (λ d₁ => step Event.let1 (eval (ρ[x↦step (Event.look x) d₁]) e₂))
+
+inductive T : Nat → Type where
+  | ret : T n
+  | step : Event → T n → T (n+1)
+inductive Value : Nat → Type where
+  | stuck : Value n
+  | fun : (Value n → Value n) → Value (n+1)
+--  | con : ConTag →
