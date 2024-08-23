@@ -1,5 +1,8 @@
 import AbsDen.Syntax
+import AbsDen.IGDTT
 import Mathlib.Data.List.AList
+
+open IGDTT
 
 inductive Event where
   | look : Name → Event
@@ -32,10 +35,21 @@ def eval [Trace d] [Domain d] [HasBind d] (ρ : FinMap Name d) : Exp → d
   | Exp.let x e₁ e₂ => bind x (λ d₁ =>                  eval (ρ[x↦step (Event.look x) d₁]) e₁)
                               (λ d₁ => step Event.let1 (eval (ρ[x↦step (Event.look x) d₁]) e₂))
 
-inductive T : Nat → Type where
-  | ret : T n
-  | step : Event → T n → T (n+1)
-inductive Value : Nat → Type where
-  | stuck : Value n
-  | fun : (Value n → Value n) → Value (n+1)
---  | con : ConTag →
+inductive T.F (α : Type) (τ : ▹ Type) : Type where
+  | ret : α → T.F α τ
+  | step : Event → ▸ τ → T.F α τ
+def T α := T.F α (gfix (T.F α))
+
+inductive Value.Tag : Type where
+  | stuck
+  | fun
+def Value.F (d : ▹ Type) : Type := @Sigma Value.Tag fun
+  | .stuck => unit
+  | .fun   => (Name × ▸ d → T (Value.F d))
+inductive ValueF (d : ▹ Type) : Type where
+  | stuck : ValueF d
+  | fun : (Name × ▸ d → T (ValueF d)) → ValueF d
+  --  | con : Con → List (Name × ▸ d) → ValueF d
+
+def Value := ValueF (gfix (T ∘ ValueF))
+def D := T Value

@@ -64,6 +64,10 @@ def IType.arrow {α β : Type} (τ₁ : IType α) (τ₂ : IType β) : IType (α
   fun f => ⟨fun n => n ⊨ ∀ᵢ a, (a ∈ᵢ τ₁) →ᵢ (f a ∈ᵢ τ₂), _⟩
 
 universe u
-def downClosed2 (p : Nat → Type u) : Type u := ∀ n , ∃ ι : p (n+1) → p n, Function.Injective i
+def downClosed2 (p : Nat → Type u) : Type u := (n : Nat) → Σ (ι : p (n+1) → p n) (Function.Injective ι)
 
-def ITy := { p : Nat → Type u // downClosed p }
+structure ITy where
+  mk ::
+  fam : Nat → Sort u
+  restrict : fam (n+1) → fam n
+  restrict_inj : ∀ n, Function.Injective (@restrict n)
