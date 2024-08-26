@@ -1,6 +1,6 @@
 import Mathlib.Data.List.AList
 
-def FinMap k v := AList (λ (_ : k) => v)
+abbrev FinMap k v := AList (λ (_ : k) => v)
 
 notation f "[" k "↦" v "]" => AList.replace k v f
 

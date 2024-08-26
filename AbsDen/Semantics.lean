@@ -12,9 +12,6 @@ class Trace (d : Type) where
   step : Event → ▹ d → d
 open Trace
 
-def isEnv {δ : Type} [Trace δ] (d : δ) : Prop :=
-  ∃ y d', d = step (Event.look y) d'
-
 class Domain (d : Type) (p : d → Prop) where
   stuck : d
   fn : Name → (Subtype p → d) → d
@@ -27,18 +24,21 @@ class HasBind (d : Type) (p : d → Prop) where
   bind : Name → (▹Subtype p → Subtype p) → (▹Subtype p → d) → d
 open HasBind
 
+abbrev isEnv {δ : Type} [Trace δ] (d : δ) : Prop :=
+  ∃ y d', d = step (Event.look y) d'
+abbrev isEnv.stuck {d : Type} [Trace d] [Domain d isEnv] : d := @Domain.stuck d (@isEnv d _) _
 abbrev EnvD (d : Type) [Trace d] := Subtype (@isEnv d _)
 
-def eval [Trace d] [Domain d (@isEnv d _)] [HasBind d (@isEnv d _)] (ρ : FinMap Name (EnvD d)) : Exp → d
+def eval [Trace d] [Domain d isEnv] [HasBind d isEnv] (ρ : FinMap Name (EnvD d)) : Exp → d
   | Exp.var x => match AList.lookup x ρ with
-      | Option.none   => @stuck d _ _
+      | Option.none   => isEnv.stuck
       | Option.some d => d
   | Exp.lam x e => fn x (λ d => step Event.app2 (next[]. eval (ρ[x↦d]) e))
   | Exp.app e x => match AList.lookup x ρ with
-      | Option.none   => @stuck d _ _
+      | Option.none   => isEnv.stuck
       | Option.some d => step Event.app1 (next[]. ap (eval ρ e) d)
-  | Exp.let x e₁ e₂ => bind x (λ d₁ => step (Event.look x) (next[d₁:EnvD d ← d₁]. eval (ρ[x↦d₁]) e₁))
-                              (λ d₁ => step Event.let1     (next[d₁ ← d₁]. eval (ρ[x↦d₁]) e₂))
+  | Exp.let x e₁ e₂ => bind x (λ dd₁ => ⟨step (Event.look x) (next[d₁:EnvD d ← dd₁]. eval (ρ[x↦d₁]) e₁), _, _, rfl⟩)
+                              (λ dd₁ => step Event.let1     (next[d₁ ← dd₁]. eval (ρ[x↦d₁]) e₂))
 
 inductive T.F (α : Type u) (τ : ▹ (Type u)) : Type u where
   | ret : α → T.F α τ
@@ -77,7 +77,7 @@ instance : Monad T where
   pure := T.ret
   bind := T.bind
 
-def Heap (n : ▹ Type) := Nat → ▸ n
+abbrev Heap (n : ▹ Type) := FinMap Nat (▸ n)
 structure ByNeed.F (d : ▹ Type) (α : Type) : Type where
   mk :: f : Heap d → T (Heap d × α)
 
@@ -91,7 +91,7 @@ axiom trustMeFix.unfold {α} [Nonempty α] (f : α → α) : trustMeFix f = f (t
 -- axiom trustMeFix.fixpoint {α} [Nonempty α] {f : α → α} {x : α} : (f x = x) → trustMeFix f = x
 -- the functional below is clearly monotone because p only occurs in positive position,
 -- so D.F is a proper inductive datatype.
-def D.F (p : Type) (n : ▹ Type) := ByNeed.F n (Value.F p n)
+abbrev D.F (p : Type) (n : ▹ Type) := ByNeed.F n (Value.F p n)
 def D := gfix (fun n => trustMeFix (fun p => D.F p n))
 theorem D.unfold : D = D.F D (next[].D) := by
   calc D = gfix (fun n => trustMeFix (fun p => D.F p n)) := rfl
@@ -104,8 +104,8 @@ instance : Coe (D.F D (next[]. D)) D where
   coe := cast D.unfold.symm
 
 abbrev Value := Value.F D (next[].D)
-def Value.stuck : Value := Value.F.stuck
-def Value.fun (f : Name → ▹ D → D) : Value := Value.F.fun (fun n => f n ∘ cast DLater.next_eq.symm)
+abbrev Value.stuck : Value := Value.F.stuck
+abbrev Value.fun (f : Name → ▹ D → D) : Value := Value.F.fun (fun n => f n ∘ cast DLater.next_eq.symm)
 
 abbrev ByNeed α := ByNeed.F (next[]. D) α
 
@@ -117,28 +117,61 @@ instance : Coe D (ByNeed Value) where
 instance : Coe (ByNeed Value) D where
   coe := cast D.eq.symm
 
+set_option trace.simps.debug true in
+@[simps]
 def ByNeed.mk (f : Heap (next[]. D) → T (Heap (next[]. D) × α)) : ByNeed α :=
   ByNeed.F.mk f
+#check ByNeed.mk_f
+
 def ByNeed.f (d : ByNeed α) : Heap (next[]. D) → T (Heap (next[]. D) × α) :=
   match d with | ByNeed.F.mk f => f
 
-abbrev D.f (d : D) := @ByNeed.f Value d
-abbrev D.need : ByNeed Value → D := cast D.eq.symm
-abbrev D.unNeed : D → ByNeed Value := cast D.eq
+def D.f (d : D) := @ByNeed.f Value d
+def D.need : ByNeed Value → D := cast D.eq.symm
+def D.unNeed : D → ByNeed Value := cast D.eq
 
 instance : Trace D where
   step e tl := ByNeed.mk fun μ => step e (next[d ← tl]. d.f μ)
+
+theorem EnvD.thing (d : EnvD D) (μ : Heap (next[]. D)) :
+  ∃ x t, cast T.unfold (d.val.f μ) = T.F.step (Event.look x) (cast DLater.next_eq t)
+:= by
+  have ⟨x,tl,h⟩ := d.property
+  apply Exists.intro x
+  apply Exists.intro (next[d ← tl]. d.f μ)
+
+  calc cast _ (d.val.f μ) = cast T.unfold ((step (Event.look x) tl).f μ) := by rw[h]
+       _                  = T.F.step (Event.look x) _ := rfl
+       _                  = cast T.unfold (step (Event.look x) (next[d ← tl]. d.f μ)) := by
+         unfold step cast
+         simp
+         trivial
+       _                  = T.F.step (Event.look x) (cast DLater.next_eq (next[d ← tl]. d.f μ)) := by
+         unfold step cast
+         set_option trace.Elab.step true in
+         trivial
+
+def EnvD.name [Trace D] (d : EnvD D) : Name := match cast T.unfold (d.val.f {}) with
+  | T.F.step (Event.look x) _ => x
+  | _ => absurd d.property sorry
+def EnvD.d' [Trace D] (d : EnvD D) : ▹ D :=
+  let f (μ : Heap _) : ▹ (T (Heap _ × Value)):= match cast T.unfold (d.val.f μ) with
+  | T.F.step _ d => cast DLater.next_eq.symm d
+  | _            => sorry
+  (cast D.eq.symm ∘ @ByNeed.mk Value) <$> Later.flip2 f
 
 instance : Monad ByNeed where
   pure a := ByNeed.mk fun μ => T.ret ⟨μ, a⟩
   bind a k := ByNeed.mk fun μ => a.f μ >>= fun
     | ⟨μ₂, r⟩ => ByNeed.f (k r) μ₂
 
-instance : Domain (▹ D) D where
+instance : Domain D isEnv where
   stuck := D.eq.symm ▸ pure Value.stuck
-  fn f := D.eq.symm ▸ pure (Value.fun f)
+  fn _x f := D.eq.symm ▸ pure (Value.fun (fun x d => f ⟨step (Event.look x) d, _, _, rfl⟩))
   ap d a := D.eq.symm ▸ do
     let v ← D.eq ▸ d
+    cast a.property.2.2 a.val
+    let ⟨_,hp⟩ := a
     match v with
-    | .fun f => f a
+    | .fun f => f x d
     | _      => stuck
