@@ -12,19 +12,24 @@ class Trace (d : Type) where
   step : Event → ▹ d → d
 open Trace
 
-class Domain (a : Type) (d : Type) where
+def isEnv {δ : Type} [Trace δ] (d : δ) : Prop :=
+  ∃ y d', d = step (Event.look y) d'
+
+class Domain (d : Type) (p : d → Prop) where
   stuck : d
-  fn : Name → (a → d) → d
-  ap : d → a → d
+  fn : Name → (Subtype p → d) → d
+  ap : d → Subtype p → d
 --  con : ConTag → List d → d
 --  select : d → AList ConTag (List d → d) → d
 open Domain
 
-class HasBind (d : Type) where
-  bind : Name → (d → d) → (d → d) → d
+class HasBind (d : Type) (p : d → Prop) where
+  bind : Name → (▹Subtype p → Subtype p) → (▹Subtype p → d) → d
 open HasBind
 
-def eval [Trace d] [Domain d d] [HasBind d] (ρ : FinMap Name d) : Exp → d
+abbrev EnvD (d : Type) [Trace d] := Subtype (@isEnv d _)
+
+def eval [Trace d] [Domain d (@isEnv d _)] [HasBind d (@isEnv d _)] (ρ : FinMap Name (EnvD d)) : Exp → d
   | Exp.var x => match AList.lookup x ρ with
       | Option.none   => @stuck d _ _
       | Option.some d => d
@@ -32,8 +37,8 @@ def eval [Trace d] [Domain d d] [HasBind d] (ρ : FinMap Name d) : Exp → d
   | Exp.app e x => match AList.lookup x ρ with
       | Option.none   => @stuck d _ _
       | Option.some d => step Event.app1 (next[]. ap (eval ρ e) d)
-  | Exp.let x e₁ e₂ => bind x (λ d₁ =>                          eval (ρ[x↦step (Event.look x) (next[]. d₁)]) e₁)
-                              (λ d₁ => step Event.let1 (next[]. eval (ρ[x↦step (Event.look x) (next[]. d₁)]) e₂))
+  | Exp.let x e₁ e₂ => bind x (λ d₁ => step (Event.look x) (next[d₁:EnvD d ← d₁]. eval (ρ[x↦d₁]) e₁))
+                              (λ d₁ => step Event.let1     (next[d₁ ← d₁]. eval (ρ[x↦d₁]) e₂))
 
 inductive T.F (α : Type u) (τ : ▹ (Type u)) : Type u where
   | ret : α → T.F α τ
@@ -78,7 +83,7 @@ structure ByNeed.F (d : ▹ Type) (α : Type) : Type where
 
 inductive Value.F (p : Type) (n : ▹ Type) : Type where
   | stuck : Value.F p n
-  | fun : (▸ n → p) → Value.F p n
+  | fun : (Name → ▸ n → p) → Value.F p n
 -- trustMeFix is safe for any monotone `f`
 partial def trustMeFix [Nonempty α] (f : α → α) := f (trustMeFix f)
 axiom trustMeFix.unfold {α} [Nonempty α] (f : α → α) : trustMeFix f = f (trustMeFix f)
@@ -100,7 +105,7 @@ instance : Coe (D.F D (next[]. D)) D where
 
 abbrev Value := Value.F D (next[].D)
 def Value.stuck : Value := Value.F.stuck
-def Value.fun (f : ▹ D → D) : Value := Value.F.fun (f ∘ cast DLater.next_eq.symm)
+def Value.fun (f : Name → ▹ D → D) : Value := Value.F.fun (fun n => f n ∘ cast DLater.next_eq.symm)
 
 abbrev ByNeed α := ByNeed.F (next[]. D) α
 
@@ -118,8 +123,8 @@ def ByNeed.f (d : ByNeed α) : Heap (next[]. D) → T (Heap (next[]. D) × α) :
   match d with | ByNeed.F.mk f => f
 
 abbrev D.f (d : D) := @ByNeed.f Value d
-abbrev D.bv : ByNeed Value → D := cast D.eq.symm
-abbrev D.unBv : ByNeed Value → D := cast D.eq.symm
+abbrev D.need : ByNeed Value → D := cast D.eq.symm
+abbrev D.unNeed : D → ByNeed Value := cast D.eq
 
 instance : Trace D where
   step e tl := ByNeed.mk fun μ => step e (next[d ← tl]. d.f μ)
@@ -130,10 +135,10 @@ instance : Monad ByNeed where
     | ⟨μ₂, r⟩ => ByNeed.f (k r) μ₂
 
 instance : Domain (▹ D) D where
-  stuck := D.mk <| pure Value.stuck
-  fn f := D.mk <| pure (Value.fun f)
-  ap d a := D.mk do
-    let v ← d
+  stuck := D.eq.symm ▸ pure Value.stuck
+  fn f := D.eq.symm ▸ pure (Value.fun f)
+  ap d a := D.eq.symm ▸ do
+    let v ← D.eq ▸ d
     match v with
     | .fun f => f a
     | _      => stuck
