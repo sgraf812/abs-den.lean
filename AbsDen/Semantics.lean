@@ -46,9 +46,9 @@ inductive T.F (α : Type u) (τ : ▹ (Type u)) : Type u where
 def T α := gfix (T.F α)
 theorem T.unfold : T α = T.F α (next[]. T α) := gfix.unfold (T.F α)
 instance : Coe (T α) (T.F α (next[]. T α)) where
-  coe := cast T.unfold
+  coe a := cast T.unfold a
 instance : Coe (T.F α (next[]. T α)) (T α) where
-  coe := cast T.unfold.symm
+  coe a := cast T.unfold.symm a
 def T.ret (x : α) : T α := cast T.unfold.symm (T.F.ret x)
 def T.step (e : Event) (tl : ▹ T α) : T α := cast T.unfold.symm (T.F.step e (cast DLater.next_eq tl))
 protected def T.recOn.{v,u} {α : Type u} {motive : T α  → Sort v} (t : T α)
@@ -56,12 +56,12 @@ protected def T.recOn.{v,u} {α : Type u} {motive : T α  → Sort v} (t : T α)
   (step : (e : Event) → (tl : ▹ T α) → motive (T.step e tl))
   : motive t := by
     let motive2 : T.F α (next[]. T α) → Sort v := motive ∘ cast T.unfold.symm
-    let fw {t} : motive (cast T.unfold.symm t) → motive2 t := cast (by aesop)
-    let bw {t} : motive2 (cast T.unfold t) → motive t := cast (by aesop)
+    let fw {t} : motive (cast T.unfold.symm t) → motive2 t := cast rfl
+    let bw {t} : motive2 (cast T.unfold t) → motive t      := cast (congrArg motive (by simp))
     have h : motive2 (cast T.unfold t) :=
       let go : (t : T.F α (next[]. T α)) → motive2 t
              | .ret a     => fw (ret a)
-             | .step e tl => cast (by aesop) (fw (step e (cast DLater.next_eq.symm tl)))
+             | .step e tl => cast (by simp) (fw (step e (cast DLater.next_eq.symm tl)))
       go (cast T.unfold t)
     exact bw h
 def T.bind {α β} (t : T α) (k : α → T β) : T β :=
@@ -121,17 +121,27 @@ set_option trace.simps.debug true in
 @[simps]
 def ByNeed.mk (f : Heap (next[]. D) → T (Heap (next[]. D) × α)) : ByNeed α :=
   ByNeed.F.mk f
-#check ByNeed.mk_f
 
 def ByNeed.f (d : ByNeed α) : Heap (next[]. D) → T (Heap (next[]. D) × α) :=
   match d with | ByNeed.F.mk f => f
 
 def D.f (d : D) := @ByNeed.f Value d
+set_option trace.simps.debug true in
+@[simps]
+def D.mk (f : Heap (next[]. D) → T (Heap (next[]. D) × Value)) :=
+  ByNeed.mk f
 def D.need : ByNeed Value → D := cast D.eq.symm
 def D.unNeed : D → ByNeed Value := cast D.eq
+def D.step (e : Event) (tl : ▹ D) : D :=
+  D.mk fun μ => T.step e (next[d ← tl]. d.f μ)
 
+set_option trace.simps.debug true in
 instance : Trace D where
-  step e tl := ByNeed.mk fun μ => step e (next[d ← tl]. d.f μ)
+  step := D.step
+
+theorem D.step_app {e tl μ} :
+  (D.step e tl).f μ = T.step e (next[d ← tl]. d.f μ)
+  := by unfold D.step; aesop
 
 theorem EnvD.thing (d : EnvD D) (μ : Heap (next[]. D)) :
   ∃ x t, cast T.unfold (d.val.f μ) = T.F.step (Event.look x) (cast DLater.next_eq t)
@@ -140,8 +150,9 @@ theorem EnvD.thing (d : EnvD D) (μ : Heap (next[]. D)) :
   apply Exists.intro x
   apply Exists.intro (next[d ← tl]. d.f μ)
 
+  set_option trace.Debug.Meta.Tactic.simp true in
   calc cast _ (d.val.f μ) = cast T.unfold ((step (Event.look x) tl).f μ) := by rw[h]
-       _                  = T.F.step (Event.look x) _ := rfl
+       _                  = T.F.step (Event.look x) _ := by unfold step D.step; simp
        _                  = cast T.unfold (step (Event.look x) (next[d ← tl]. d.f μ)) := by
          unfold step cast
          simp
@@ -166,10 +177,10 @@ instance : Monad ByNeed where
     | ⟨μ₂, r⟩ => ByNeed.f (k r) μ₂
 
 instance : Domain D isEnv where
-  stuck := D.eq.symm ▸ pure Value.stuck
-  fn _x f := D.eq.symm ▸ pure (Value.fun (fun x d => f ⟨step (Event.look x) d, _, _, rfl⟩))
-  ap d a := D.eq.symm ▸ do
-    let v ← D.eq ▸ d
+  stuck := cast D.eq.symm <| pure Value.stuck
+  fn _x f := cast D.eq.symm <| pure (Value.fun (fun x d => f ⟨step (Event.look x) d, _, _, rfl⟩))
+  ap d a := cast D.eq.symm do
+    let v ← cast D.eq d
     cast a.property.2.2 a.val
     let ⟨_,hp⟩ := a
     match v with
