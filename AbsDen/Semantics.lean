@@ -124,15 +124,32 @@ instance : Coe D (ByNeed Value) where
 instance : Coe (ByNeed Value) D where
   coe := cast D.eq.symm
 
-set_option trace.simps.debug true in
-@[simps]
 def ByNeed.mk (f : Heap (next[]. D) → T (Heap (next[]. D) × α)) : ByNeed α := ByNeed.F.mk f
 def ByNeed.f (d : ByNeed α) : Heap (next[]. D) → T (Heap (next[]. D) × α) := match d with | ByNeed.F.mk f => f
+@[simp]
+def ByNeed.mk_f {f : Heap (next[]. D) → T (Heap (next[]. D) × α)} : (ByNeed.mk f).f = f := by unfold ByNeed.mk ByNeed.f; simp
+@[simp]
+def ByNeed.f_mk {d : ByNeed α} : ByNeed.mk d.f = d := by unfold ByNeed.mk ByNeed.f; simp
+theorem ByNeed.ext {d₁ d₂ : ByNeed α} (h : d₁.f = d₂.f) : d₁ = d₂ := by
+  calc d₁ = ByNeed.mk (d₁.f) := rfl
+       _  = ByNeed.mk (d₂.f) := by rw[h]
+       _  = d₂               := rfl
 
 def D.mk (f : Heap (next[]. D) → T (Heap (next[]. D) × Value)) : D := ByNeed.mk f
 def D.f (d : D) := @ByNeed.f Value d
+
+--@[simp]
+--theorem cast_stuff {α β : Type u} {h : α = β} {a b : α} (h2 : cast h a = cast h b) : a = b :=
+--  (cast_inj h).mp h2
+
 @[simp]
-theorem D.mk_f {f μ} : (D.mk f).f μ = f μ := by unfold D.mk ByNeed.mk D.f ByNeed.f; simp
+theorem D.mk_f {f} : (D.mk f).f = f := by unfold D.mk D.f; simp
+@[simp]
+theorem D.f_mk {d} : D.mk d.f = d := by unfold D.mk D.f; simp
+theorem D.ext {d₁ d₂ : D} (h : d₁.f = d₂.f) : d₁ = d₂ := by
+  calc d₁ = D.mk d₁.f := by simp
+       _  = D.mk d₂.f := by rw[h]
+       _  = d₂        := by simp
 
 def D.step (e : Event) (tl : ▹ D) : D := D.mk fun μ => T.step e (next[d ← tl]. d.f μ)
 @[simp]
@@ -171,7 +188,10 @@ def EnvD.tl (d : EnvD D) : ▹ D :=
       (d.property_f μ)
   (cast D.eq.symm ∘ @ByNeed.mk Value) <$> Later.flip2 f
 
-theorem EnvD.iso (d : EnvD D) : step (Event.look d.name) d.tl = d := sorry
+theorem EnvD.iso (d : EnvD D) : d.val = step (Event.look d.name) d.tl := by
+  funext by
+  calc d.val μ = _ := rfl
+       _     = step (Event.look d.name) d.tl μ := sorry
 
 instance : Monad ByNeed where
   pure a := ByNeed.mk fun μ => T.ret ⟨μ, a⟩
