@@ -45,10 +45,6 @@ inductive T.F (α : Type u) (τ : ▹ (Type u)) : Type u where
   | step : Event → ▸ τ → T.F α τ
 def T α := gfix (T.F α)
 theorem T.unfold : T α = T.F α (next[]. T α) := gfix.unfold (T.F α)
--- protected def T.noConfusionType.{u,u_1} {α : Type u} (P : Sort u_1) (v1 : T α) (v2 : T α) : Sort u_1 :=
---   T.F.noConfusionType P (cast T.unfold v1) (cast T.unfold v2)
--- protected def T.noConfusion.{u_1, u} {α : Type u} {P : Sort u_1} {v1 v2 : T α} (h12 : v1 = v2) : T.noConfusionType P v1 v2 :=
---   T.F.noConfusion (v1 := cast T.unfold v1) (v2 := cast T.unfold v2) (congrArg (cast T.unfold) h12)
 @[match_pattern]
 def T.ret (x : α) : T α := cast T.unfold.symm (T.F.ret x)
 @[match_pattern]
@@ -66,6 +62,28 @@ protected def T.recOn.{v,u} {α : Type u} {motive : T α  → Sort v} (t : T α)
              | .step e tl => cast (by simp) (fw (step e (cast DLater.next_eq.symm tl)))
       go (cast T.unfold t)
     exact bw h
+#check cast_eq
+
+@[simp]
+protected theorem T.F.recOn_cast.{v,u} {α : Type u} {τ} {motive : T.F α τ  → Sort v} {r s t} (ha : T.F α τ = β) (hb : β = T.F α τ)
+  : cast (congrArg motive (by simp : cast hb (cast ha t) = t)) ((cast hb (cast ha t)).recOn (motive:=motive) r s)
+  = t.recOn (motive:=motive) r s := by cases ha; rfl
+protected theorem T.recOn_ret.{v,u} {α : Type u} {motive : T α  → Sort v} {a r s}
+  : (T.ret a).recOn (motive:=motive) r s = r a := by
+  unfold T.recOn T.ret T.step at *
+  simp
+  have h {t : T.F α (next[]. T α)} : cast T.unfold (cast T.unfold.symm t) = t := by simp
+  unfold cast
+  generalize T α = β at *
+  cases h
+  cases h
+--  apply (T.F.recOn_cast T.unfold.symm T.unfold (motive:=motive ∘ cast T.unfold.symm) (t:=F.ret a) (r := r))
+  -- have h2 {t : T.F α (next[]. T α)} : T.unfold ▸ (T.unfold.symm ▸ t) = t := by unfold cast at h; exact h
+  -- cases T.unfold
+  -- cases T.unfold.symm
+protected theorem T.recOn_step.{v,u} {α : Type u} {motive : T α  → Sort v} {e tl r s}
+  : (T.step e tl).recOn (motive:=motive) r s = s e tl := by
+  cases T.unfold
 theorem T.ne_ret_step : ¬ (T.ret a = T.step e tl) := by unfold T.ret T.step; simp
 theorem T.confuse_ret : T.ret a1 = T.ret a2 → a1 = a2 := by unfold T.ret; simp
 theorem T.confuse_step1 : T.step e1 tl1 = T.step e2 tl2 → e1 = e2 := by unfold T.step; simp; intro a b; exact a
