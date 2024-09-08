@@ -70,20 +70,12 @@ protected theorem T.F.recOn_cast.{v,u} {α : Type u} {τ} {motive : T.F α τ  �
   = t.recOn (motive:=motive) r s := by cases ha; rfl
 protected theorem T.recOn_ret.{v,u} {α : Type u} {motive : T α  → Sort v} {a r s}
   : (T.ret a).recOn (motive:=motive) r s = r a := by
-  unfold T.recOn T.ret T.step at *
+  unfold T.recOn T.ret T.step recOn.match_1 at *
   simp
-  have h {t : T.F α (next[]. T α)} : cast T.unfold (cast T.unfold.symm t) = t := by simp
-  unfold cast
-  generalize T α = β at *
-  cases h
-  cases h
---  apply (T.F.recOn_cast T.unfold.symm T.unfold (motive:=motive ∘ cast T.unfold.symm) (t:=F.ret a) (r := r))
-  -- have h2 {t : T.F α (next[]. T α)} : T.unfold ▸ (T.unfold.symm ▸ t) = t := by unfold cast at h; exact h
-  -- cases T.unfold
-  -- cases T.unfold.symm
 protected theorem T.recOn_step.{v,u} {α : Type u} {motive : T α  → Sort v} {e tl r s}
   : (T.step e tl).recOn (motive:=motive) r s = s e tl := by
-  cases T.unfold
+  unfold T.recOn T.ret T.step recOn.match_1 at *
+  simp
 theorem T.ne_ret_step : ¬ (T.ret a = T.step e tl) := by unfold T.ret T.step; simp
 theorem T.confuse_ret : T.ret a1 = T.ret a2 → a1 = a2 := by unfold T.ret; simp
 theorem T.confuse_step1 : T.step e1 tl1 = T.step e2 tl2 → e1 = e2 := by unfold T.step; simp; intro a b; exact a
