@@ -49,17 +49,14 @@ axiom DLater.next_eq {α : Sort u} : ▹ α = DLater (next[].α)
 notation "▸ " α:100 => DLater α
 
 -- Some perhaps more controversial definitions:
-def flipp1 {α β : Type u} : (Laterrr (α → β)) → α → Laterrr β :=
-  fun f a () => f () a
-
 def flipp2 {α β : Type u} : (α → Laterrr β) → Laterrr (α → β) :=
   fun f () a => f a ()
 
-@[extern "flippp1"]
-axiom Later.flip1 {α β : Sort u} : (Later (α → β)) → (α → Later β)
+def Later.flip1 {α β : Type u} (lf : Later (α → β)) (la : Later α) : Later β :=
+  next[f ← lf, a ← la]. f a
 
 @[extern "flippp2"]
-axiom Later.flip2 {α β : Sort u} : (α → Later β) → Later (α → β)
+axiom Later.flip2 {α β : Type u} : (Later α → Later β) → Later (α → β)
 
-axiom Later.flip12_eq {α β : Sort u} (f : Later (α → β)) : Later.flip2 (Later.flip1 f) = f
-axiom Later.flip21_eq {α β : Sort u} (f : α → Later β) : Later.flip1 (Later.flip2 f) = f
+axiom Later.flip12_eq {α β : Type u} (f : Later (α → β)) : Later.flip2 (Later.flip1 f) = f
+axiom Later.flip21_eq {α β : Type u} (f : Later α → Later β) : Later.flip1 (Later.flip2 f) = f
