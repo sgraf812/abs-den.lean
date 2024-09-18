@@ -42,21 +42,18 @@ macro_rules
 
 axiom Later.eq {α : Sort u} {a b : α} : ▹ (a = b) ↔ (next[].a) = (next[].b)
 axiom Later.ap.compute {α β : Sort u} (f : α → β) (a : α) : Later.ap (next[].f) (next[].a) = next[].(f a)
-axiom Later.ap.id {α : Sort u} (a : ▹ α) : Later.ap (next[].id) a = a
+axiom Later.ap.assoc {α β : Sort u} (f : α → β) (a : α) : Later.ap (next[].f) (next[].a) = next[].(f a)
+axiom Later.ap.id {α β : Sort u} (f : α → β) (a : ▹ α) : Later.ap (next[].id) a = a
 
 axiom DLater : ▹ (Sort u) → Sort u
 axiom DLater.next_eq {α : Sort u} : ▹ α = DLater (next[].α)
 notation "▸ " α:100 => DLater α
 
 -- Some perhaps more controversial definitions:
-def flipp2 {α β : Type u} : (α → Laterrr β) → Laterrr (α → β) :=
+def flippp {α β : Type u} : (α → Laterrr β) → Laterrr (α → β) :=
   fun f () a => f a ()
 
-def Later.flip1 {α β : Type u} (lf : Later (α → β)) (la : Later α) : Later β :=
-  next[f ← lf, a ← la]. f a
+@[extern "flippp"]
+axiom Later.unsafeFlip {α β : Type u} : (α → Later β) → Later (α → β)
 
-@[extern "flippp2"]
-axiom Later.flip2 {α β : Type u} : (Later α → Later β) → Later (α → β)
-
-axiom Later.flip12_eq {α β : Type u} (f : Later (α → β)) : Later.flip2 (Later.flip1 f) = f
-axiom Later.flip21_eq {α β : Type u} (f : Later α → Later β) : Later.flip1 (Later.flip2 f) = f
+-- axiom Later.unsafeFlip_eq {α β γ : Type u} (f : α → Later β) (h : (α → β) → γ) : (next[g ← Later.unsafeFlip f]. h g) = h <$> f a -- I'm reasonably certain that this rule is safe

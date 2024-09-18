@@ -1,6 +1,7 @@
 import AbsDen.Syntax
 import AbsDen.IGDTT
 import Mathlib.Data.List.AList
+import Mathlib.Data.List.MinMax
 
 open IGDTT
 
@@ -197,7 +198,7 @@ def EnvD.name (d : EnvD D) : Name :=
     (d.property_f {})
 
 def EnvD.tl (d : EnvD D) : ▹ D :=
-  let f (μ : Heap _) : ▹ (T (Heap _ × Value)) :=
+  D.mk <$> Later.unsafeFlip fun μ =>
     (d.val.f μ).recOn (motive:= fun τ => (EnvD.proj_pre τ μ) -> ▹ (T (Heap _ × Value)))
       (fun a h => absurd h (fun ⟨x,tl,h⟩ => T.ne_ret_step h))
       (fun e tl h => by
@@ -205,7 +206,6 @@ def EnvD.tl (d : EnvD D) : ▹ D :=
         case look x => exact tl
         repeat' (absurd h; rcases h with ⟨x,tl,h⟩; have h := T.confuse_step1 h; nomatch h))
       (d.property_f μ)
-  (cast D.eq.symm ∘ @ByNeed.mk Value) <$> Later.flip2 f
 
 @[simp]
 theorem help3 {f : α₁ → β₁} {a : α₂} (h₁ : α₁ = α₂) (h₂ : β₁ = β₂) :
@@ -227,30 +227,22 @@ theorem EnvD.iso (d : EnvD D) : d.val = D.step (Event.look d.name) d.tl := D.ext
   have ⟨x, tl, h⟩ := d.property
   have hμ := congrArg (fun d => d.f μ) h
   have hemp := congrArg (fun d => d.f {}) h
-  simp[instTraceD] at hμ hemp
-  rw[hμ]
-  simp
-  unfold EnvD.name
-  simp
-  rw[T.recOn_rw hemp]
-  simp
-  rw[help3 (by unfold EnvD.proj_pre; simp[hemp]) rfl]
-  unfold EnvD.tl
-  simp
-  set_option trace.Meta.Tactic.simp true in
-  simp only[(T.recOn_rw hμ)]
-  simp
-  rw[help]
-  simp
-  rw[T.recOn_step]
-  --by_contra h
-  --exact h <| fun hn => by
-     --
-  --apply T.recOn (motive := fun τ => (EnvD.proj_pre τ μ) -> τ = (D.step (Event.look d.name) d.tl).f μ) (d.val.f μ)
-  --case a => exact d.property_f μ
-  --case ret => intro ⟨μ',v⟩ ⟨x,tl,h⟩; rw[h]; simp;
---
-  --case step => sorry
+  simp[instTraceD] at *
+  have hx : x = d.name := by
+    unfold EnvD.name
+    rw[T.recOn_rw hemp]
+    rw[help3 (by unfold EnvD.proj_pre; simp[hemp]) rfl]
+    simp
+  have htl : tl = d.tl := by
+    unfold EnvD.tl
+    simp
+    sorry
+  -- This is hard and tedious to prove, and perhaps utlimately unnecessary. Postpone
+  --  unfold instApplicativeLater D.mk
+  --  rw[Later.unsafeFlip_eq]
+  --  set_option trace.Meta.Tactic.simp true in
+  --  simp only[(T.recOn_rw hμ)]
+  rw[hμ, hx, htl]
 
 instance : Monad ByNeed where
   pure a := ByNeed.mk fun μ => T.ret ⟨μ, a⟩
@@ -259,11 +251,48 @@ instance : Monad ByNeed where
 
 instance : Domain D isEnv where
   stuck := cast D.eq.symm <| pure Value.stuck
-  fn _x f := cast D.eq.symm <| pure (Value.fun (fun x d => f ⟨step (Event.look x) d, _, _, rfl⟩))
+  fn _x f := cast D.eq.symm <| pure (Value.fun (fun x d => f ⟨Trace.step (Event.look x) d, _, _, rfl⟩))
   ap d a := cast D.eq.symm do
     let v ← cast D.eq d
-    cast a.property.2.2 a.val
-    let ⟨_,hp⟩ := a
     match v with
-    | .fun f => f x d
-    | _      => stuck
+    | .fun f => f (EnvD.name a) (EnvD.tl a)
+    | _      => pure Value.stuck
+
+--stepLookFetch :  ∀ {τ} {{_ : Monad τ}} {{_ : ∀ {V} → Trace (τ V)}}
+--                 → Var → Addr → D (ByNeed τ)
+--stepLookFetch {τ} x a = mkByNeed (λ μ →
+--  let d▹ = fst (well-addressed μ a) in
+--  step (look x) (λ α → ByNeed.get (transport (≡-▸HeapD τ) d▹ α) μ))
+
+def nextFree (μ : Heap (▹ D)) : Nat := match μ.keys.maximum? with
+| .none => 0
+| .some n => n+1
+theorem nextFree.free (μ : Heap (▹ D)) : nextFree μ ∉ μ := by
+  rw[AList.mem_keys]
+  unfold nextFree
+  cases μ.keys
+  case nil => simp
+  case cons hd tl =>
+    apply Not.intro
+    intro h
+    have h : hd ∈ hd :: tl := by simp
+    have hm : (hd::tl).maximum? = some a ∧
+    case bot => simp
+    case coe n =>
+def fetch (a : Nat) : ▹ D :=
+  D.mk <$> Later.unsafeFlip fun (μ : Heap (▹ D)) =>
+    match AList.lookup a μ with
+    | .some ld => next[d ← ld]. d.f μ
+    | .none    => next[]. T.ret ⟨μ, Value.stuck⟩
+
+def memo (a : Nat) : ▹ D → ▹ D :=
+  gfix fun lmemo ld => next[d ← ld, memo ← lmemo]. cast D.eq.symm do
+    let v ← cast D.eq d
+    ByNeed.mk fun μ =>
+      let μ' := μ[a↦memo (next[]. cast D.eq.symm <| pure v)]
+      T.step Event.upd (next[]. T.ret ⟨μ', v⟩)
+
+
+
+instance : HasBind D isEnv where
+  bind x rhs body := cast D.eq.symm do
