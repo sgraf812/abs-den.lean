@@ -19,15 +19,15 @@ class Domain (d : Type) (p : d → Prop) where
 --  con : ConTag → List d → d
 --  select : d → AList ConTag (List d → d) → d
 
-class HasBind (d : Type) (p : d → Prop) where
-  bind : Name → (▹Subtype p → Subtype p) → (▹Subtype p → d) → d
+class HasBind (d : Type) where
+  bind : Name → (▹d → d) → (▹d → d) → d
 
 abbrev isEnv {δ : Type} [Trace δ] (d : δ) : Prop :=
   ∃ y d', d = Trace.step (Event.look y) d'
 abbrev isEnv.stuck {d : Type} [Trace d] [Domain d isEnv] : d := @Domain.stuck d (@isEnv d _) _
 abbrev EnvD (d : Type) [Trace d] := Subtype (@isEnv d _)
 
-def eval [Trace d] [Domain d isEnv] [HasBind d isEnv] (ρ : FinMap Name (EnvD d)) : Exp → d
+def eval [Trace d] [Domain d isEnv] [HasBind d] (ρ : FinMap Name (EnvD d)) : Exp → d
   | Exp.var x => match AList.lookup x ρ with
       | Option.none   => isEnv.stuck
       | Option.some d => d
@@ -35,8 +35,8 @@ def eval [Trace d] [Domain d isEnv] [HasBind d isEnv] (ρ : FinMap Name (EnvD d)
   | Exp.app e x => match AList.lookup x ρ with
       | Option.none   => isEnv.stuck
       | Option.some d => Trace.step Event.app1 (next[]. Domain.ap (eval ρ e) d)
-  | Exp.let x e₁ e₂ => HasBind.bind x (λ dd₁ => ⟨Trace.step (Event.look x) (next[d₁:EnvD d ← dd₁]. eval (ρ[x↦d₁]) e₁), _, _, rfl⟩)
-                                      (λ dd₁ => Trace.step Event.let1     (next[d₁ ← dd₁]. eval (ρ[x↦d₁]) e₂))
+  | Exp.let x e₁ e₂ => HasBind.bind x (λ dd₁ => eval (ρ[x↦⟨Trace.step (Event.look x) (next[d₁:d ← dd₁]. d₁), _, _, rfl⟩]) e₁)
+                                      (λ dd₁ => Trace.step Event.let1 (next[]. eval (ρ[x↦⟨Trace.step (Event.look x) (next[d₁:d ← dd₁]. d₁), _, _, rfl⟩]) e₂))
 
 inductive T.F (α : Type u) (τ : Type u) : Type u where
   | ret : α → T.F α τ
@@ -258,32 +258,45 @@ instance : Domain D isEnv where
     | .fun f => f (EnvD.name a) (EnvD.tl a)
     | _      => pure Value.stuck
 
---stepLookFetch :  ∀ {τ} {{_ : Monad τ}} {{_ : ∀ {V} → Trace (τ V)}}
---                 → Var → Addr → D (ByNeed τ)
---stepLookFetch {τ} x a = mkByNeed (λ μ →
---  let d▹ = fst (well-addressed μ a) in
---  step (look x) (λ α → ByNeed.get (transport (≡-▸HeapD τ) d▹ α) μ))
+abbrev is_allocator (f : Heap (▹ D) → Nat) := ∀ μ, f μ ∉ μ
 
 def nextFree (μ : Heap (▹ D)) : Nat := match μ.keys.maximum? with
 | .none => 0
 | .some n => n+1
-theorem nextFree.free (μ : Heap (▹ D)) : nextFree μ ∉ μ := by
+
+theorem nextFree_is_allocator : is_allocator nextFree := by
+  intro μ
   rw[AList.mem_keys]
   unfold nextFree
-  cases μ.keys
-  case nil => simp
-  case cons hd tl =>
-    apply Not.intro
-    intro h
-    have h : hd ∈ hd :: tl := by simp
-    have hm : (hd::tl).maximum? = some a ∧
-    case bot => simp
-    case coe n =>
+  split
+  · simp_all
+  · next n h =>
+    have h := (List.maximum?_le_iff (by simp) h n).mp Nat.le.refl
+    intro (habsurd : n+1 ∈ μ.keys)
+    have h : n+1 ≤ n := h (n+1) habsurd
+    omega
+
 def fetch (a : Nat) : ▹ D :=
   D.mk <$> Later.unsafeFlip fun (μ : Heap (▹ D)) =>
     match AList.lookup a μ with
     | .some ld => next[d ← ld]. d.f μ
     | .none    => next[]. T.ret ⟨μ, Value.stuck⟩
+
+def stepLookFetch (x : Name) (a : Nat) : D :=
+  D.mk fun μ =>
+    match AList.lookup a μ with
+    | .some ld => Trace.step (Event.look x) (next[d ← ld]. d.f μ)
+    | .none    => Trace.step (Event.look x) (next[]. T.ret ⟨μ, Value.stuck⟩)
+
+-- the following theorem is important to get rid of the unsafeFlip in fetch:
+theorem stepLook_fetch_eq_stepLookFetch
+  : Trace.step (Event.look x) (fetch a) = stepLookFetch x a
+:= D.ext <| by
+  unfold instTraceD D.step fetch stepLookFetch Functor.map instApplicativeLater
+  ext μ
+  simp[Later.ap.assoc2]
+  rw[Later.unsafeFlip_eq]
+  split <;> simp[Trace.step, instTraceT]
 
 def memo (a : Nat) : ▹ D → ▹ D :=
   gfix fun lmemo ld => next[d ← ld, memo ← lmemo]. cast D.eq.symm do
@@ -292,7 +305,16 @@ def memo (a : Nat) : ▹ D → ▹ D :=
       let μ' := μ[a↦memo (next[]. cast D.eq.symm <| pure v)]
       T.step Event.upd (next[]. T.ret ⟨μ', v⟩)
 
+def get : ByNeed (Heap (▹ D)) := ByNeed.mk fun μ => T.ret ⟨μ,μ⟩
+def put (μ : Heap (▹ D)) : ByNeed Unit := ByNeed.mk fun _ => T.ret ⟨μ,⟨⟩⟩
 
+instance : HasBind D where
+  bind _x rhs body := cast D.eq.symm do
+    let μ ← get
+    let a := nextFree μ
+    put (μ[a ↦ memo a (next[]. rhs (fetch a))])
+    body (fetch a)
 
-instance : HasBind D isEnv where
-  bind x rhs body := cast D.eq.symm do
+def evalByNeed : FinMap Name (EnvD D) → Exp → D := eval
+
+#eval (evalByNeed {} (Exp.let "id" (Exp.lam "x" (Exp.var "x")) (Exp.app (Exp.var "id") "id"))).f {}
