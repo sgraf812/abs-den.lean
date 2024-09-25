@@ -14,13 +14,13 @@ def appp {α β : Type u} (f : Laterrr (α → β)) (a : Laterrr α) : Laterrr �
 unsafe def gfixxx {α : Type u} (f : Laterrr α → α) : α := f (nexttt (fun () => gfixxx f))
 
 -- Generalise from Type u to Sort u:
-@[extern "Laterrr"]
+@[extern "l_IGDTT_Laterrr"]
 axiom Later : Sort u → Sort u
-@[extern "nexttt"]
+@[extern "l_IGDTT_nexttt"]
 axiom Later.next {α : Sort u} (a : PUnit → α) : Later α
-@[extern "appp"]
+@[extern "l_IGDTT_appp"]
 axiom Later.ap {α β : Sort u} (f : Later (α → β)) (a : Later α) : Later β
-@[extern "gfixxx"]
+@[extern "l_IGDTT_gfixxx"]
 axiom gfix {α : Sort u} (f : Later α → α) : α
 axiom gfix.unfold {α : Sort u} (f : Later α -> α) : gfix f = f (Later.next (fun () => gfix f))
 
@@ -54,6 +54,10 @@ notation "▸ " α:100 => DLater α
 def flippp {α β : Type u} : (α → Laterrr β) → Laterrr (α → β) :=
   fun f () a => f a ()
 
-@[extern "flippp"]
+@[extern "l_IGDTT_flippp"]
 axiom Later.unsafeFlip {α β : Type u} : (α → Later β) → Later (α → β)
 axiom Later.unsafeFlip_eq {α β : Type u} (f : α → Later β) (μ : α) : Later.ap (Later.next (fun () g => g μ)) (Later.unsafeFlip f) = f μ -- I'm reasonably certain that this rule is safe
+
+def forceee {α : Type u} (a : Laterrr α) : α := a ()
+@[extern "l_IGDTT_forceee"]
+axiom Later.unsafeForce {α : Sort u} : ▹ α → α -- highly unsafe! Need to recall from Barr's work when exactly this is safe. Probably needs support from the typechecker

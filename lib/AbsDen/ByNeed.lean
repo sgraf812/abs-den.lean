@@ -1,46 +1,12 @@
-import AbsDen.Syntax
-import AbsDen.IGDTT
-import Mathlib.Data.List.AList
-import Mathlib.Data.List.MinMax
+import IGDTT
+import AbsDen.Semantics
 
 open IGDTT
-
-inductive Event where
-  | look : Name → Event
-  | upd | app1 | app2 | let1 | case1 | case2
-
-class Trace (d : Type) where
-  step : Event → ▹ d → d
-
-class Domain (d : Type) (p : d → Prop) where
-  stuck : d
-  fn : Name → (Subtype p → d) → d
-  ap : d → Subtype p → d
---  con : ConTag → List d → d
---  select : d → AList ConTag (List d → d) → d
-
-class HasBind (d : Type) where
-  bind : Name → (▹d → d) → (▹d → d) → d
-
-abbrev isEnv {δ : Type} [Trace δ] (d : δ) : Prop :=
-  ∃ y d', d = Trace.step (Event.look y) d'
-abbrev isEnv.stuck {d : Type} [Trace d] [Domain d isEnv] : d := @Domain.stuck d (@isEnv d _) _
-abbrev EnvD (d : Type) [Trace d] := Subtype (@isEnv d _)
-
-def eval [Trace d] [Domain d isEnv] [HasBind d] (ρ : FinMap Name (EnvD d)) : Exp → d
-  | Exp.var x => match AList.lookup x ρ with
-      | Option.none   => isEnv.stuck
-      | Option.some d => d
-  | Exp.lam x e => Domain.fn x (λ d => Trace.step Event.app2 (next[]. eval (ρ[x↦d]) e))
-  | Exp.app e x => match AList.lookup x ρ with
-      | Option.none   => isEnv.stuck
-      | Option.some d => Trace.step Event.app1 (next[]. Domain.ap (eval ρ e) d)
-  | Exp.let x e₁ e₂ => HasBind.bind x (λ dd₁ => eval (ρ[x↦⟨Trace.step (Event.look x) (next[d₁:d ← dd₁]. d₁), _, _, rfl⟩]) e₁)
-                                      (λ dd₁ => Trace.step Event.let1 (next[]. eval (ρ[x↦⟨Trace.step (Event.look x) (next[d₁:d ← dd₁]. d₁), _, _, rfl⟩]) e₂))
 
 inductive T.F (α : Type u) (τ : Type u) : Type u where
   | ret : α → T.F α τ
   | step : Event → τ → T.F α τ
+  deriving Repr
 def T α := gfix (fun τ => T.F α (▸ τ))
 theorem T.unfold : T α = T.F α (▹ T α) := calc
   T α = T.F α (▸ next[]. T α) := gfix.unfold (fun τ => T.F α (▸ τ))
@@ -97,7 +63,7 @@ def T.bind {α β} (t : T α) (k : α → T β) : T β :=
     | .step e tl => T.step e (next[loop ← loop', t ← tl]. loop t)
   gfix loop t
 
-instance : Trace (T α) where
+instance instTraceT : Trace Later (T α) where
   step := T.step
 
 instance : Monad T where
@@ -176,10 +142,10 @@ def D.step (e : Event) (tl : ▹ D) : D := D.mk fun μ => T.step e (next[d ← t
 @[simp]
 theorem D.step_f : (D.step e tl).f μ = T.step e (next[d ← tl]. d.f μ) := by unfold D.step; simp
 
-instance instTraceD : Trace D where
+instance instTraceD : Trace Later D where
   step := D.step
 
-theorem EnvD.property_f (d : EnvD D) (μ : Heap (▹ D)) :
+theorem EnvD.property_f (d : EnvD Later D) (μ : Heap (▹ D)) :
   ∃ (x:Name) (tl: ▹ D), d.val.f μ = T.step (Event.look x) (next[d' : D ← tl]. d'.f μ)
 := by
   have ⟨x,tl,h⟩ := d.property
@@ -188,7 +154,7 @@ theorem EnvD.property_f (d : EnvD D) (μ : Heap (▹ D)) :
 protected def EnvD.proj_pre (τ : T (Heap (▹ D) × Value)) (μ : Heap (▹ D)) :
   Prop := ∃ (x:Name) (tl: ▹ D), τ = T.step (Event.look x) (next[d' : D ← tl]. d'.f μ)
 
-def EnvD.name (d : EnvD D) : Name :=
+def EnvD.name (d : EnvD Later D) : Name :=
   (d.val.f {}).recOn (motive:= fun τ => (EnvD.proj_pre τ {}) -> Name)
     (fun a h => absurd h (fun ⟨x,tl,h⟩ => T.ne_ret_step h))
     (fun e tl h => by
@@ -197,7 +163,7 @@ def EnvD.name (d : EnvD D) : Name :=
       repeat' (absurd h; rcases h with ⟨x,tl,h⟩; have h := T.confuse_step1 h; nomatch h))
     (d.property_f {})
 
-def EnvD.tl (d : EnvD D) : ▹ D :=
+def EnvD.tl (d : EnvD Later D) : ▹ D :=
   D.mk <$> Later.unsafeFlip fun μ =>
     (d.val.f μ).recOn (motive:= fun τ => (EnvD.proj_pre τ μ) -> ▹ (T (Heap _ × Value)))
       (fun a h => absurd h (fun ⟨x,tl,h⟩ => T.ne_ret_step h))
@@ -221,7 +187,7 @@ theorem help {a : α} (h : β = α) : (cast (congrArg (· → γ) h) f) a = f (c
 @[simp]
 theorem help2 {a : γ} (h : β = α) : (cast (congrArg (γ → ·) h) f) a = cast h (f a) := by simp[help3 rfl h]
 
-theorem EnvD.iso (d : EnvD D) : d.val = D.step (Event.look d.name) d.tl := D.ext <| funext fun μ => by
+theorem EnvD.iso (d : EnvD Later D) : d.val = D.step (Event.look d.name) d.tl := D.ext <| funext fun μ => by
   --unfold EnvD.name
   --simp
   have ⟨x, tl, h⟩ := d.property
@@ -249,7 +215,7 @@ instance : Monad ByNeed where
   bind a k := ByNeed.mk fun μ => a.f μ >>= fun
     | ⟨μ₂, r⟩ => ByNeed.f (k r) μ₂
 
-instance : Domain D isEnv where
+instance : Domain D (isEnv Later D) where
   stuck := cast D.eq.symm <| pure Value.stuck
   fn _x f := cast D.eq.symm <| pure (Value.fun (fun x d => f ⟨Trace.step (Event.look x) d, _, _, rfl⟩))
   ap d a := cast D.eq.symm do
@@ -308,13 +274,39 @@ def memo (a : Nat) : ▹ D → ▹ D :=
 def get : ByNeed (Heap (▹ D)) := ByNeed.mk fun μ => T.ret ⟨μ,μ⟩
 def put (μ : Heap (▹ D)) : ByNeed Unit := ByNeed.mk fun _ => T.ret ⟨μ,⟨⟩⟩
 
-instance : HasBind D where
+instance : HasBind Later D where
   bind _x rhs body := cast D.eq.symm do
     let μ ← get
     let a := nextFree μ
     put (μ[a ↦ memo a (next[]. rhs (fetch a))])
     body (fetch a)
 
-def evalByNeed : FinMap Name (EnvD D) → Exp → D := eval
+def evalByNeed : FinMap Name (EnvD Later D) → Exp → D := eval
 
-#eval (evalByNeed {} (Exp.let "id" (Exp.lam "x" (Exp.var "x")) (Exp.app (Exp.var "id") "id"))).f {}
+def takeT (n : Nat) (t : T α) : (T.F α)^[n] Unit := match n, cast T.unfold t with
+| 0, _ => ⟨⟩
+| .succ _, .ret a => cast (Function.iterate_succ_apply' _ _ _).symm (T.F.ret a)
+| .succ n, .step e lt => cast (Function.iterate_succ_apply' _ _ _).symm (T.F.step e (takeT n (Later.unsafeForce lt)))
+
+instance : Repr (Value.F p n) where
+  reprPrec v _ := match v with
+  | .stuck => "stuck"
+  | .fun _ => "fun"
+
+instance : Repr (Heap (▹ D)) where
+  reprPrec μ n := reprPrec μ.keys n
+
+class C (n : Nat) where
+  m : Nat
+
+-- instance : C n where
+--   m :=
+
+instance instReprIterate (f : Type → Type) (n : Nat) (α : Type) [instReprF : ∀β [Repr β], Repr (f β)] [instReprα : Repr α] : Repr (f^[n] α) where
+  reprPrec t p := match n with
+  | 0   => reprPrec (cast (by simp : f^[0] α = α) t) p
+  | n+1 => let t := (cast (Function.iterate_succ_apply' _ _ _ : f^[n+1] α = f (f^[n] α)) t);
+           @reprPrec _ (@instReprF _ (@instReprIterate _ _ _ instReprF _)) t p
+
+-- #synth Repr ((T.F (Heap (▹ D) × Value))^[100] Unit)
+-- #eval takeT 100 ((evalByNeed {} [exp| let id := fun x => x; id id |]).f {})
