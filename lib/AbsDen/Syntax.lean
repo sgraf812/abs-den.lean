@@ -1,10 +1,11 @@
 import Mathlib.Data.List.AList
+import Mathlib.Order.CompleteLattice
 
 abbrev FinMap k v := AList (λ (_ : k) => v)
 
 notation f "[" k "↦" v "]" => AList.replace k v f
 
-def FinMap.map [DecidableEq k] (f : v → v) (m : FinMap k v) : FinMap k v := Id.run do
+def FinMap.map [DecidableEq k] (f : a → b) (m : FinMap k a) : FinMap k b := Id.run do
   let mut res := {}
   for ⟨k,v⟩ in m.entries do
     res := res[k↦f v]
@@ -17,6 +18,8 @@ def FinMap.unionWith [DecidableEq k] (merge : v → v → v) (l : FinMap k v) (r
     | .none    => res := res[k↦rv]
     | .some lv => res := res[k↦merge lv rv]
   pure res
+
+instance [CompleteLattice v] : CompleteLattice (FinMap k v) := sorry
 
 abbrev Name := String
 -- abbrev ConTag := Nat

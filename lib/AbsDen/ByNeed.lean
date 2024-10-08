@@ -1,5 +1,6 @@
 import IGDTT
 import AbsDen.Semantics
+import Mathlib.Data.List.MinMax
 
 open IGDTT
 
@@ -63,7 +64,7 @@ def T.bind {α β} (t : T α) (k : α → T β) : T β :=
     | .step e tl => T.step e (next[loop ← loop', t ← tl]. loop t)
   gfix loop t
 
-instance instTraceT : Trace Later (T α) where
+instance instTraceT : Trace (T α) Later where
   step := T.step
 
 instance : Monad T where
@@ -142,10 +143,10 @@ def D.step (e : Event) (tl : ▹ D) : D := D.mk fun μ => T.step e (next[d ← t
 @[simp]
 theorem D.step_f : (D.step e tl).f μ = T.step e (next[d ← tl]. d.f μ) := by unfold D.step; simp
 
-instance instTraceD : Trace Later D where
+instance instTraceD : Trace D Later where
   step := D.step
 
-theorem EnvD.property_f (d : EnvD Later D) (μ : Heap (▹ D)) :
+theorem EnvD.property_f (d : EnvD D) (μ : Heap (▹ D)) :
   ∃ (x:Name) (tl: ▹ D), d.val.f μ = T.step (Event.look x) (next[d' : D ← tl]. d'.f μ)
 := by
   have ⟨x,tl,h⟩ := d.property
@@ -154,7 +155,7 @@ theorem EnvD.property_f (d : EnvD Later D) (μ : Heap (▹ D)) :
 protected def EnvD.proj_pre (τ : T (Heap (▹ D) × Value)) (μ : Heap (▹ D)) :
   Prop := ∃ (x:Name) (tl: ▹ D), τ = T.step (Event.look x) (next[d' : D ← tl]. d'.f μ)
 
-def EnvD.name (d : EnvD Later D) : Name :=
+def EnvD.name (d : EnvD D) : Name :=
   (d.val.f {}).recOn (motive:= fun τ => (EnvD.proj_pre τ {}) -> Name)
     (fun a h => absurd h (fun ⟨x,tl,h⟩ => T.ne_ret_step h))
     (fun e tl h => by
@@ -163,15 +164,15 @@ def EnvD.name (d : EnvD Later D) : Name :=
       repeat' (absurd h; rcases h with ⟨x,tl,h⟩; have h := T.confuse_step1 h; nomatch h))
     (d.property_f {})
 
-def EnvD.tl (d : EnvD Later D) : ▹ D :=
-  D.mk <$> Later.unsafeFlip fun μ =>
+def EnvD.tl (d : EnvD D) : ▹ D :=
+  next[f ← Later.unsafeFlip fun μ =>
     (d.val.f μ).recOn (motive:= fun τ => (EnvD.proj_pre τ μ) -> ▹ (T (Heap _ × Value)))
       (fun a h => absurd h (fun ⟨x,tl,h⟩ => T.ne_ret_step h))
       (fun e tl h => by
         cases e
         case look x => exact tl
         repeat' (absurd h; rcases h with ⟨x,tl,h⟩; have h := T.confuse_step1 h; nomatch h))
-      (d.property_f μ)
+      (d.property_f μ)]. D.mk f
 
 @[simp]
 theorem help3 {f : α₁ → β₁} {a : α₂} (h₁ : α₁ = α₂) (h₂ : β₁ = β₂) :
@@ -187,7 +188,7 @@ theorem help {a : α} (h : β = α) : (cast (congrArg (· → γ) h) f) a = f (c
 @[simp]
 theorem help2 {a : γ} (h : β = α) : (cast (congrArg (γ → ·) h) f) a = cast h (f a) := by simp[help3 rfl h]
 
-theorem EnvD.iso (d : EnvD Later D) : d.val = D.step (Event.look d.name) d.tl := D.ext <| funext fun μ => by
+theorem EnvD.iso (d : EnvD D) : d.val = D.step (Event.look d.name) d.tl := D.ext <| funext fun μ => by
   --unfold EnvD.name
   --simp
   have ⟨x, tl, h⟩ := d.property
@@ -215,9 +216,9 @@ instance : Monad ByNeed where
   bind a k := ByNeed.mk fun μ => a.f μ >>= fun
     | ⟨μ₂, r⟩ => ByNeed.f (k r) μ₂
 
-instance : Domain D (isEnv Later D) where
+instance : Domain D Later where
   stuck := cast D.eq.symm <| pure Value.stuck
-  fn _x f := cast D.eq.symm <| pure (Value.fun (fun x d => f ⟨Trace.step (Event.look x) d, _, _, rfl⟩))
+  fn f := cast D.eq.symm <| pure (Value.fun (fun x d => f ⟨Trace.step (Event.look x) d, _, _, rfl⟩))
   ap d a := cast D.eq.symm do
     let v ← cast D.eq d
     match v with
@@ -243,10 +244,10 @@ theorem nextFree_is_allocator : is_allocator nextFree := by
     omega
 
 def fetch (a : Nat) : ▹ D :=
-  D.mk <$> Later.unsafeFlip fun (μ : Heap (▹ D)) =>
+  next[f ← Later.unsafeFlip fun (μ : Heap (▹ D)) =>
     match AList.lookup a μ with
     | .some ld => next[d ← ld]. d.f μ
-    | .none    => next[]. T.ret ⟨μ, Value.stuck⟩
+    | .none    => next[]. T.ret ⟨μ, Value.stuck⟩]. D.mk f
 
 def stepLookFetch (x : Name) (a : Nat) : D :=
   D.mk fun μ =>
@@ -258,7 +259,7 @@ def stepLookFetch (x : Name) (a : Nat) : D :=
 theorem stepLook_fetch_eq_stepLookFetch
   : Trace.step (Event.look x) (fetch a) = stepLookFetch x a
 := D.ext <| by
-  unfold instTraceD D.step fetch stepLookFetch Functor.map instApplicativeLater
+  unfold instTraceD D.step fetch stepLookFetch
   ext μ
   simp[Later.ap.assoc2]
   rw[Later.unsafeFlip_eq]
@@ -274,17 +275,21 @@ def memo (a : Nat) : ▹ D → ▹ D :=
 def get : ByNeed (Heap (▹ D)) := ByNeed.mk fun μ => T.ret ⟨μ,μ⟩
 def put (μ : Heap (▹ D)) : ByNeed Unit := ByNeed.mk fun _ => T.ret ⟨μ,⟨⟩⟩
 
-instance : HasBind Later D where
+instance : HasBind D Later where
   bind _x rhs body := cast D.eq.symm do
     let μ ← get
     let a := nextFree μ
     put (μ[a ↦ memo a (next[]. rhs (fetch a))])
     body (fetch a)
 
-def evalByNeed : FinMap Name (EnvD Later D) → Exp → D := eval
+instance : Applicative Later where
+  pure a := Later.next (fun () => a)
+  seq f a := Later.ap f (a ())
+
+def evalByNeed : FinMap Name (EnvD D) → Exp → D := eval
 
 def takeT (n : Nat) (t : T α) : (T.F α)^[n] Unit := match n, cast T.unfold t with
-| 0, _ => ⟨⟩
+| 0, _ => ()
 | .succ _, .ret a => cast (Function.iterate_succ_apply' _ _ _).symm (T.F.ret a)
 | .succ n, .step e lt => cast (Function.iterate_succ_apply' _ _ _).symm (T.F.step e (takeT n (Later.unsafeForce lt)))
 
