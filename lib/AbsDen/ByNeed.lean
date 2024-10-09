@@ -76,6 +76,7 @@ instance : Monad T where
 abbrev Heap (n : Type) := FinMap Nat n
 structure ByNeed.F (n : Type) (α : Type) : Type where
   mk :: f : Heap n → T (Heap n × α)
+abbrev Addr := Nat
 
 inductive Value.F (p : Type) (n : Type) : Type where
   | stuck : Value.F p n
@@ -238,6 +239,7 @@ theorem nextFree_is_allocator : is_allocator nextFree := by
   split
   · simp_all
   · next n h =>
+    unfold Addr at *
     have h := (List.maximum?_le_iff (by simp) h n).mp Nat.le.refl
     intro (habsurd : n+1 ∈ μ.keys)
     have h : n+1 ≤ n := h (n+1) habsurd
