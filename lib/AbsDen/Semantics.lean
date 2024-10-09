@@ -21,13 +21,14 @@ class Domain (D : Type) (L : outParam (Type → Type)) extends Trace D L where
 class HasBind (d : Type) (L : outParam (Type → Type)) where
   bind : Name → (L d → d) → (L d → d) → d
 
-def eval [Applicative L] [Domain D L] [HasBind D L] (ρ : FinMap Name (EnvD D)) : Exp → D
+def eval {D : Type} {L : outParam (Type → Type)} [Applicative L] [Domain D L] [HasBind D L] (e : Exp) (ρ : FinMap Name (EnvD D)) : D :=
+match e with
   | Exp.var x => match AList.lookup x ρ with
       | Option.none   => Domain.stuck
       | Option.some d => d
-  | Exp.lam x e => Domain.fn (λ d => Trace.step Event.app2 (pure (eval (ρ[x↦d]) e)))
+  | Exp.lam x e => Domain.fn (λ d => Trace.step Event.app2 (pure (eval e (ρ[x↦d]))))
   | Exp.app e x => match AList.lookup x ρ with
       | Option.none   => Domain.stuck
-      | Option.some d => Trace.step Event.app1 (pure (Domain.ap (eval ρ e) d))
-  | Exp.let x e₁ e₂ => HasBind.bind x (λ d₁ => eval (ρ[x↦⟨Trace.step (Event.look x) d₁, _, _, rfl⟩]) e₁)
-                                      (λ d₁ => Trace.step Event.let1 (pure (eval (ρ[x↦⟨Trace.step (Event.look x) d₁, _, _, rfl⟩]) e₂)))
+      | Option.some d => Trace.step Event.app1 (pure (Domain.ap (eval e ρ) d))
+  | Exp.let x e₁ e₂ => HasBind.bind x (λ d₁ => eval e₁ (ρ[x↦⟨Trace.step (Event.look x) d₁, _, _, rfl⟩]))
+                                      (λ d₁ => Trace.step Event.let1 (pure (eval e₂ (ρ[x↦⟨Trace.step (Event.look x) d₁, _, _, rfl⟩]))))

@@ -5,14 +5,14 @@ namespace IGDTT
 
 open Lean Lean.Parser
 
-universe u
+universe u v
 
 -- Generalise from Type u to Sort u:
 axiom Later : Sort u → Sort u
 @[extern "igdtt_next"]
 axiom Later.next {α : Sort u} (a : PUnit → α) : Later α
 @[extern "igdtt_ap"]
-axiom Later.ap {α β : Sort u} (f : Later (α → β)) (a : Later α) : Later β
+axiom Later.ap {α : Sort u} {β : Sort v} (f : Later (α → β)) (a : Later α) : Later β
 @[extern "igdtt_gfix"]
 axiom gfix {α : Sort u} (f : Later α → α) : α
 axiom gfix.unfold {α : Sort u} (f : Later α -> α) : gfix f = f (Later.next (fun () => gfix f))
@@ -33,7 +33,7 @@ axiom Later.eq {α : Sort u} {a b : α} : ▹ (a = b) ↔ (next[].a) = (next[].b
 axiom Later.ap.compute {α β : Sort u} (f : α → β) (a : α) : Later.ap (next[].f) (next[].a) = next[].(f a)
 axiom Later.ap.assoc1 {α β : Sort u} (f : α → β) (a : α) : Later.ap (next[].f) (next[].a) = next[].(f a)
 axiom Later.ap.assoc2 {α β γ : Sort u} (f : α → β) (g : β → γ) (la : ▹ α) : Later.ap (next[].g) (Later.ap (next[].f) la) = Later.ap (next[]. fun a => g (f a)) la
-axiom Later.ap.id {α β : Sort u} (f : α → β) (a : ▹ α) : Later.ap (next[].id) a = a
+axiom Later.ap.id {α : Sort u} {β : Sort v} (f : α → β) (a : ▹ α) : Later.ap (next[].id) a = a
 
 axiom DLater : ▹ (Sort u) → Sort u
 axiom DLater.next_eq {α : Sort u} : ▹ α = DLater (next[].α)

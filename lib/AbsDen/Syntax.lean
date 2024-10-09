@@ -20,6 +20,9 @@ def FinMap.unionWith [DecidableEq k] (merge : v → v → v) (l : FinMap k v) (r
   pure res
 
 instance [CompleteLattice v] : CompleteLattice (FinMap k v) := sorry
+instance [DecidableEq k] : GetElem (FinMap k v) k v Membership.mem where
+  getElem m k h := match AList.lookup k m, AList.lookup_isSome.mpr h with
+  | .some v, _ => v
 
 abbrev Name := String
 -- abbrev ConTag := Nat
@@ -49,7 +52,8 @@ macro_rules
   | `([exp| $x:ident |]) => `(Exp.var $(quote x.getId.toString))
   | `([exp| $e $x |]) => `(Exp.app [exp| $e |] $(quote x.getId.toString))
   | `([exp| fun $x => $e |]) => `(Exp.lam $(quote x.getId.toString) [exp| $e |])
-  | `([exp| fun $x $y $ys => $e |]) => `(Exp.lam $(quote x.getId.toString) [exp| fun $y $ys => $e |])
+  | `([exp| fun $x $ys => $e |]) => `(Exp.lam $(quote x.getId.toString) [exp| fun $ys => $e |])
   | `([exp| let $x := $e1; $e2 |]) => `(Exp.let $(quote x.getId.toString) [exp| $e1 |] [exp| $e2 |])
 
 example := [exp| let id := fun x => x; id id |]
+example := [exp| let id := (fun x y => y) id; id |]

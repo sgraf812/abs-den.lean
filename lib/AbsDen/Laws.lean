@@ -8,6 +8,9 @@ namespace AbsDen
 instance [CompleteLattice A] : CompleteLattice (@Subtype A p) := sorry
 
 abbrev idd := fun (x : Type) => x
+instance : Applicative idd where
+  pure := fun x => x
+  seq := fun f a => f (a ())
 
 class AbstractByNeedDomain (D : Type)
   extends CompleteLattice D,
@@ -49,8 +52,6 @@ decreasing_by sorry
 
 noncomputable abbrev αEnvD [AbstractByNeedDomain A] (μ : Heap (▹ D)) (Ds : Set (EnvD D)) : EnvD A :=
   ⟨αD μ { d.1 | d : Ds }, sorry⟩
-termination_by 0
-decreasing_by sorry
 
 noncomputable abbrev γEnvD [AbstractByNeedDomain A] (μ : Heap (▹ D)) (a : EnvD A) : Set (EnvD D) :=
   { ⟨d, sorry⟩ | d : γD μ a.1 }
@@ -58,12 +59,7 @@ termination_by 0
 decreasing_by sorry
 
 noncomputable abbrev αT [AbstractByNeedDomain A] : Set (T (Heap (▹ D) × Value)) → A := GaloisConnection.repr_l βT
-termination_by 0
-decreasing_by sorry
 noncomputable abbrev γT [AbstractByNeedDomain A] : A → Set (T (Heap (▹ D) × Value)) := GaloisConnection.repr_u βT
-termination_by 0
-decreasing_by sorry
-
 noncomputable def βT [AbstractByNeedDomain A] (τ : T (Heap (▹ D) × Value)) : A :=
   ⨆ i, (βT_pref ⟨i, takeT i τ⟩)
 termination_by 0
@@ -83,8 +79,29 @@ noncomputable def βE [AbstractByNeedDomain A] : (Heap (▹ D) × FinMap Name (E
 noncomputable def αE [AbstractByNeedDomain A] : Set (Heap (▹ D) × FinMap Name (EnvD D)) → FinMap Name (EnvD A) := GaloisConnection.repr_l βE
 noncomputable def γE [AbstractByNeedDomain A] : FinMap Name (EnvD A) → Set (Heap (▹ D) × FinMap Name (EnvD D)) := GaloisConnection.repr_u βE
 
-noncomputable def αS [AbstractByNeedDomain A] (eval : FinMap Name (EnvD D) → Exp → D) : FinMap Name (EnvD A) → Exp → A :=
-  fun ρ e => αT { (eval μρ.1.2 e).f μρ.1.1 | μρ : (γE ρ) }
+noncomputable def αS (A : Type) [AbstractByNeedDomain A] (S : FinMap Name (EnvD D) → D) : FinMap Name (EnvD A) → A :=
+  fun ρ => αT { (S μρ.1.2).f μρ.1.1 | μρ : (γE ρ) }
 
 
--- def α : [AbstractByNeedDomain A] → D → A :=
+open Domain Trace Event in
+noncomputable example [AbstractByNeedDomain A] :
+    αS A (evalByNeed [exp| let id := (fun x y => y) id; id |]) {}
+  = step let1 (step (look "id") (step app1 (step app2 (fn sorry))))
+  := sorry
+
+-- Definable entities
+
+abbrev DefiEnv := { ρ : FinMap Name (EnvD D) // ∀ x (h : x ∈ ρ), ∃a, EnvD.tl ρ[x] = fetch a }
+def adom (ρ : FinMap Name (EnvD D)) : Set Addr := { a | ∃x, (_ : x ∈ ρ) → EnvD.tl ρ[x] = fetch a}
+structure DefiD where
+  e : Exp
+  ρ : DefiEnv
+abbrev DefiD.d (d : DefiD) : D := evalByNeed d.e d.ρ
+instance : Coe DefiD D where coe := DefiD.d
+
+abbrev DefiD.adom (d : DefiD) : Set Addr := AbsDen.adom d.ρ
+
+def blub (h : ∃ (a : Bool), ∃ (b : Bool), a = b) : Set Bool := { b | b = (Classical.indefiniteDescription _ (by have ⟨_,h⟩ := h; exact h)).val }
+
+lemma abs_ByNeed_interpretation' [AbstractByNeedDomain A] : αS A (evalByNeed e ρ) μ ≤ eval e := sorry
+theorem abs_ByNeed_interpretation [AbstractByNeedDomain A] : αS A (evalByNeed e) ≤ eval e := sorry
