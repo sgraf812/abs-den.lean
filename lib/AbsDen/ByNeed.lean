@@ -73,10 +73,10 @@ instance : Monad T where
 
 -- Convention: p is the inductive recursion variable, n is the guarded one.
 --             So ultimately, p will be instantiated with D, while n will be instantiated with ▹ D.
+abbrev Heap (n : Type) := FinMap Nat n
+structure ByNeed.F (n : Type) (α : Type) : Type where
+  mk :: f : Heap n → T (Heap n × α)
 abbrev Addr := Nat
-abbrev Heap.F (n : ▹ Type) := FinMap Addr { d : ▸ n // ▸ (next[D:Type←n]. ∃ d':D, HEq d (next[]. d'))}
-structure ByNeed.F (n : ▹ Type) (α : Type) : Type where
-  mk :: f : Heap.F n → T (Heap.F n × α)
 
 inductive Value.F (p : Type) (n : Type) : Type where
   | stuck : Value.F p n
@@ -88,44 +88,37 @@ axiom trustMeFix.unfold {α} [Nonempty α] (f : α → α) : trustMeFix f = f (t
 -- axiom trustMeFix.fixpoint {α} [Nonempty α] {f : α → α} {x : α} : (f x = x) → trustMeFix f = x
 -- the functional below is clearly monotone because p only occurs in positive position,
 -- so D.F is a proper inductive datatype.
-abbrev D.F d := ByNeed.F (next[]. d) (Value.F d (▹ d))
-def D := gfix (fun n => trustMeFix (fun p => ByNeed.F n (Value.F p (▸ n))))
-theorem D.unfold : D = D.F D := by
-  let F a b c := ByNeed.F a (Value.F b c)
-  let G n := trustMeFix (fun p => F n p (▸ n))
-  calc D = gfix G := rfl
-       _ = trustMeFix (F (next[]. D) · (▸ (next[]. D))) := gfix.unfold G
-       _ = F (next[]. D) (trustMeFix (F (next[]. D) · (▸ (next[]. D)))) (▸ (next[]. D)) := trustMeFix.unfold _
-       _ = F (next[]. D) (trustMeFix (F (next[]. D) · (▸ (next[]. D)))) (▹ D) := by rw[DLater.next_eq]
-       _ = F (next[]. D) D (▹ D) := congrArg (F (next[]. D) · (▹ D)) (gfix.unfold G).symm
-
-instance : Coe D (D.F D) where
+abbrev D.F (p : Type) (n : Type) := ByNeed.F n (Value.F p n)
+def D := gfix (fun n => trustMeFix (fun p => D.F p (▸ n)))
+theorem D.unfold : D = D.F D (▹ D) := by
+  calc D = gfix (fun n => trustMeFix (fun p => D.F p (▸ n))) := rfl
+       _ = trustMeFix (fun p => D.F p (▸ (next[]. D))) := gfix.unfold _
+       _ = D.F (trustMeFix (fun p => D.F p (▸ (next[]. D)))) (▸ (next[]. D)) := trustMeFix.unfold _
+       _ = D.F (trustMeFix (fun p => D.F p (▸ (next[]. D)))) (▹ D) := by rw[DLater.next_eq]
+       _ = D.F D (▹ D) := congrArg (D.F · (▹ D)) (gfix.unfold (fun n => trustMeFix (fun p => D.F p (▸ n)))).symm
+instance : Coe D (D.F D (▹ D)) where
   coe := cast D.unfold
-instance : Coe (D.F D) D where
+instance : Coe (D.F D (▹ D)) D where
   coe := cast D.unfold.symm
 
-abbrev Heap := Heap.F (next[]. D)
-abbrev HeapD := { d : ▹ D // ▹ (∃ d':D, d = next[]. d') }
-instance : Membership Addr Heap where mem μ a := @Membership.mem Addr (FinMap Addr _) _ μ a
-instance : GetElem Heap Addr (▹ D)
 abbrev Value := Value.F D (▹ D)
 abbrev Value.stuck : Value := Value.F.stuck
 abbrev Value.fun (f : Name → ▹ D → D) : Value := Value.F.fun f
 
-abbrev ByNeed α := ByNeed.F (next[]. D) α
+abbrev ByNeed α := ByNeed.F (▹ D) α
 
 theorem D.eq : D = ByNeed Value := by
-  calc D = D.F D := D.unfold
+  calc D = D.F D (▹ D) := D.unfold
        _ = ByNeed Value := rfl
 instance : Coe D (ByNeed Value) where
   coe := cast D.eq
 instance : Coe (ByNeed Value) D where
   coe := cast D.eq.symm
 
-def ByNeed.mk (f : Heap → T (Heap × α)) : ByNeed α := ByNeed.F.mk f
-def ByNeed.f (d : ByNeed α) : Heap → T (Heap × α) := match d with | ByNeed.F.mk f => f
+def ByNeed.mk (f : Heap (▹ D) → T (Heap (▹ D) × α)) : ByNeed α := ByNeed.F.mk f
+def ByNeed.f (d : ByNeed α) : Heap (▹ D) → T (Heap (▹ D) × α) := match d with | ByNeed.F.mk f => f
 @[simp]
-def ByNeed.mk_f {f : Heap → T (Heap × α)} : (ByNeed.mk f).f = f := by unfold ByNeed.mk ByNeed.f; simp
+def ByNeed.mk_f {f : Heap (▹ D) → T (Heap (▹ D) × α)} : (ByNeed.mk f).f = f := by unfold ByNeed.mk ByNeed.f; simp
 @[simp]
 def ByNeed.f_mk {d : ByNeed α} : ByNeed.mk d.f = d := by unfold ByNeed.mk ByNeed.f; simp
 theorem ByNeed.ext {d₁ d₂ : ByNeed α} (h : d₁.f = d₂.f) : d₁ = d₂ := by
@@ -133,7 +126,7 @@ theorem ByNeed.ext {d₁ d₂ : ByNeed α} (h : d₁.f = d₂.f) : d₁ = d₂ :
        _  = ByNeed.mk (d₂.f) := by rw[h]
        _  = d₂               := rfl
 
-def D.mk (f : Heap → T (Heap × Value)) : D := ByNeed.mk f
+def D.mk (f : Heap (▹ D) → T (Heap (▹ D) × Value)) : D := ByNeed.mk f
 def D.f (d : D) := @ByNeed.f Value d
 @[simp]
 theorem D.mk_f {f} : (D.mk f).f = f := by unfold D.mk D.f; simp
@@ -154,13 +147,13 @@ theorem D.step_f : (D.step e tl).f μ = T.step e (next[d ← tl]. d.f μ) := by 
 instance instTraceD : Trace D Later where
   step := D.step
 
-theorem EnvD.property_f (d : EnvD D) (μ : Heap) :
+theorem EnvD.property_f (d : EnvD D) (μ : Heap (▹ D)) :
   ∃ (x:Name) (tl: ▹ D), d.val.f μ = T.step (Event.look x) (next[d' : D ← tl]. d'.f μ)
 := by
   have ⟨x,tl,h⟩ := d.property
   exact ⟨x,tl, by rw[h]; exact D.step_f⟩
 
-protected def EnvD.proj_pre (τ : T (Heap × Value)) (μ : Heap) :
+protected def EnvD.proj_pre (τ : T (Heap (▹ D) × Value)) (μ : Heap (▹ D)) :
   Prop := ∃ (x:Name) (tl: ▹ D), τ = T.step (Event.look x) (next[d' : D ← tl]. d'.f μ)
 
 def EnvD.name (d : EnvD D) : Name :=
@@ -233,9 +226,9 @@ instance : Domain D Later where
     | .fun f => f (EnvD.name a) (EnvD.tl a)
     | _      => pure Value.stuck
 
-abbrev is_allocator (f : Heap → Addr) := ∀ μ, f μ ∉ μ
+abbrev is_allocator (f : Heap (▹ D) → Nat) := ∀ μ, f μ ∉ μ
 
-def nextFree (μ : Heap) : Addr := match μ.keys.maximum? with
+def nextFree (μ : Heap (▹ D)) : Nat := match μ.keys.maximum? with
 | .none => 0
 | .some n => n+1
 
@@ -253,7 +246,7 @@ theorem nextFree_is_allocator : is_allocator nextFree := by
     omega
 
 def fetch (a : Nat) : ▹ D :=
-  next[f ← Later.unsafeFlip fun (μ : Heap) =>
+  next[f ← Later.unsafeFlip fun (μ : Heap (▹ D)) =>
     match AList.lookup a μ with
     | .some ld => next[d ← ld]. d.f μ
     | .none    => next[]. T.ret ⟨μ, Value.stuck⟩]. D.mk f
@@ -281,8 +274,8 @@ def memo (a : Nat) : ▹ D → ▹ D :=
       let μ' := μ[a↦memo (next[]. cast D.eq.symm <| pure v)]
       T.step Event.upd (next[]. T.ret ⟨μ', v⟩)
 
-def get : ByNeed (Heap) := ByNeed.mk fun μ => T.ret ⟨μ,μ⟩
-def put (μ : Heap) : ByNeed Unit := ByNeed.mk fun _ => T.ret ⟨μ,⟨⟩⟩
+def get : ByNeed (Heap (▹ D)) := ByNeed.mk fun μ => T.ret ⟨μ,μ⟩
+def put (μ : Heap (▹ D)) : ByNeed Unit := ByNeed.mk fun _ => T.ret ⟨μ,⟨⟩⟩
 
 instance : HasBind D Later where
   bind _x rhs body := cast D.eq.symm do
@@ -295,7 +288,7 @@ instance : Applicative Later where
   pure a := Later.next (fun () => a)
   seq f a := Later.ap f (a ())
 
-def evalByNeed : Exp → FinMap Name (EnvD D) → D := eval
+def evalByNeed : FinMap Name (EnvD D) → Exp → D := eval
 
 def takeT (n : Nat) (t : T α) : (T.F α)^[n] Unit := match n, cast T.unfold t with
 | 0, _ => ()
@@ -307,7 +300,7 @@ instance : Repr (Value.F p n) where
   | .stuck => "stuck"
   | .fun _ => "fun"
 
-instance : Repr (Heap) where
+instance : Repr (Heap (▹ D)) where
   reprPrec μ n := reprPrec μ.keys n
 
 class C (n : Nat) where
@@ -322,5 +315,5 @@ instance instReprIterate (f : Type → Type) (n : Nat) (α : Type) [instReprF : 
   | n+1 => let t := (cast (Function.iterate_succ_apply' _ _ _ : f^[n+1] α = f (f^[n] α)) t);
            @reprPrec _ (@instReprF _ (@instReprIterate _ _ _ instReprF _)) t p
 
--- #synth Repr ((T.F (Heap × Value))^[100] Unit)
+-- #synth Repr ((T.F (Heap (▹ D) × Value))^[100] Unit)
 -- #eval takeT 100 ((evalByNeed {} [exp| let id := fun x => x; id id |]).f {})
