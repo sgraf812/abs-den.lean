@@ -139,14 +139,14 @@ theorem D.ext {d₁ d₂ : D} (h : d₁.f = d₂.f) : d₁ = d₂ := by
        _  = d₂        := by simp
 
 def D.ret (v : Value) : D := D.mk fun μ => T.ret ⟨μ, v⟩
-@[simp]
-theorem D.ret_f : (D.ret v).f μ = T.ret ⟨μ, v⟩ := by unfold D.ret; simp
 def D.step (e : Event) (tl : ▹ D) : D := D.mk fun μ => T.step e (next[d ← tl]. d.f μ)
-@[simp]
-theorem D.step_f : (D.step e tl).f μ = T.step e (next[d ← tl]. d.f μ) := by unfold D.step; simp
 
 instance instTraceD : Trace D Later where
   step := D.step
+
+@[simp]
+theorem D.step_f : (Trace.step e tl).f μ = Trace.step e (next[d:D ← tl]. d.f μ) := by
+  unfold Trace.step instTraceD instTraceT D.step; simp
 
 theorem EnvD.property_f (d : EnvD D) (μ : Heap) :
   ∃ (x:Name) (tl: ▹ D), d.val.f μ = T.step (Event.look x) (next[d' : D ← tl]. d'.f μ)
@@ -213,12 +213,20 @@ theorem EnvD.iso (d : EnvD D) : d.val = D.step (Event.look d.name) d.tl := D.ext
   --  simp only[(T.recOn_rw hμ)]
   rw[hμ, hx, htl]
 
-instance : Monad ByNeed where
+instance instMonadByNeed : Monad ByNeed where
   pure a := ByNeed.mk fun μ => T.ret ⟨μ, a⟩
   bind a k := ByNeed.mk fun μ => a.f μ >>= fun
     | ⟨μ₂, r⟩ => ByNeed.f (k r) μ₂
 
-instance : Domain D Later where
+@[simp]
+theorem ByNeed.pure_f : (pure v : ByNeed α).f μ = pure ⟨μ, v⟩ := by
+  unfold pure instMonadByNeed instMonadT; simp
+
+@[simp]
+theorem ByNeed.confuse_pure : instMonadByNeed.pure a = pure b → a = b := by
+  unfold pure instMonadByNeed instMonadT ByNeed.mk T.ret; simp;
+
+instance instDomainD : Domain D Later where
   stuck := cast D.eq.symm <| pure Value.stuck
   fn f := cast D.eq.symm <| pure (Value.fun (fun x d => f ⟨Trace.step (Event.look x) d, _, _, rfl⟩))
   ap d a := cast D.eq.symm do
@@ -226,6 +234,11 @@ instance : Domain D Later where
     match v with
     | .fun f => f (EnvD.name a) (EnvD.tl a)
     | _      => pure Value.stuck
+
+@[simp]
+theorem D.stuck_ne_fn : Domain.stuck ≠ (Domain.fn g : D) := by
+  unfold Domain.stuck Domain.fn instDomainD; simp
+  sorry
 
 abbrev is_allocator (f : Heap → Addr) := ∀ μ, f μ ∉ μ
 
@@ -278,7 +291,7 @@ def memo (a : Nat) : ▹ D → ▹ D :=
 def get : ByNeed Heap := ByNeed.mk fun μ => T.ret ⟨μ,μ⟩
 def put (μ : Heap) : ByNeed Unit := ByNeed.mk fun _ => T.ret ⟨μ,⟨⟩⟩
 
-instance : HasBind D Later where
+instance instHasBindD : HasBind D Later where
   bind _x rhs body := cast D.eq.symm do
     let μ ← get
     let a := nextFree μ

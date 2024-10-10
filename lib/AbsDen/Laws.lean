@@ -105,18 +105,35 @@ abbrev DefiHeap := FinMap Addr DefiD
 abbrev DefiHeap.μ (μ : DefiHeap) : Heap := FinMap.map_with_key (fun a d => memo a (next[]. d.d)) μ
 abbrev DefiHeap.dom (μ : DefiHeap) : Set Addr := fun a => a ∈ μ.keys
 
-structure EvaluatesTo (d₁ : DefiD) (μ₁ : DefiHeap) (d₂ : DefiD) (μ₂ : DefiHeap) where
+structure BalancedExec (d₁ : DefiD) (μ₁ : DefiHeap) (d₂ : DefiD) (μ₂ : DefiHeap) where
   mk ::
   events : List Event
   is_value : d₂.e.is_value
   property : d₁.d.f μ₁.μ = List.foldr (fun ev τ => T.step ev (next[]. τ)) (d₂.d.f μ₂.μ) events
 
-notation:max "<" e₁:max "," μ₁:max ">⇓<" e₂:max "," μ₂:max ">" => EvaluatesTo e₁ μ₁ e₂ μ₂
+structure StuckExec (d₁ : DefiD) (μ₁ : DefiHeap) where
+  mk ::
+  events : List Event
+  μ₂ : DefiHeap
+  property : d₁.d.f μ₁.μ = List.foldr (fun ev τ => T.step ev (next[]. τ)) ((Domain.stuck : D).f μ₂.μ) events
+
+notation:max "<" e₁:max "," μ₁:max ">⇓<" e₂:max "," μ₂:max ">" => BalancedExec e₁ μ₁ e₂ μ₂
 
 lemma eval_deterministic : <⟨e,ρ₁⟩,μ₁>⇓<⟨e₂,ρ₂⟩,μ₂> → <⟨e₁,ρ₁⟩,μ₁>⇓<⟨e₃,ρ₃⟩,μ₃> → e₂ = e₃ ∧ ρ₂ = ρ₃ ∧ μ₂ = μ₃ :=
   sorry
 
-lemma eval_not_stuck : <⟨e,ρ₁⟩,μ₁>⇓<⟨v,ρ₂⟩,μ₂> →
+lemma balanaced_not_stuck (hbal : <⟨e,ρ₁⟩,μ₁>⇓<⟨v,ρ₂⟩,μ₂>) (hstuck : StuckExec ⟨e,ρ₁⟩ μ₁) : False := by
+  have ⟨bal_events, ⟨x,e',hval⟩, bal_property⟩ := hbal
+  simp at hval
+  rw[hval] at bal_property
+  have ⟨stuck_events, μ₃, stuck_property⟩ := hstuck
+  absurd bal_property.symm.trans stuck_property
+  induction bal_events
+  case nil => unfold DefiD.d evalByNeed eval Domain.fn instDomainD; simp; sorry
+  case cons => sorry
+  unfold DefiD.d evalByNeed eval at *
+  simp at stuck_property bal_property
+  sorry
 
 inductive HeapProgression : DefiHeap → DefiHeap → Prop where
 | refl : ---------------------
