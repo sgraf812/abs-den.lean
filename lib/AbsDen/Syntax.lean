@@ -3,12 +3,18 @@ import Mathlib.Order.CompleteLattice
 
 abbrev FinMap k v := AList (λ (_ : k) => v)
 
-notation f "[" k "↦" v "]" => AList.replace k v f
+notation:max f "[" k "↦" v "]" => AList.replace k v f
 
 def FinMap.map [DecidableEq k] (f : a → b) (m : FinMap k a) : FinMap k b := Id.run do
   let mut res := {}
   for ⟨k,v⟩ in m.entries do
     res := res[k↦f v]
+  pure res
+
+def FinMap.map_with_key [DecidableEq k] (f : k → a → b) (m : FinMap k a) : FinMap k b := Id.run do
+  let mut res := {}
+  for ⟨k,v⟩ in m.entries do
+    res := res[k↦f k v]
   pure res
 
 def FinMap.unionWith [DecidableEq k] (merge : v → v → v) (l : FinMap k v) (r : FinMap k v) : FinMap k v := Id.run do
@@ -28,15 +34,23 @@ abbrev Name := String
 -- abbrev ConTag := Nat
 
 inductive Exp where
-  | var : Name → Exp
-  | app : Exp → Name → Exp
-  | lam : Name → Exp → Exp
-  | let : Name → Exp → Exp → Exp
+| var : Name → Exp
+| app : Exp → Name → Exp
+| lam : Name → Exp → Exp
+| let : Name → Exp → Exp → Exp
 --  | con : ConTag → List Name → Exp
 --  | select : Exp → FinMap ConTag (List Name × Exp) → Exp
-  deriving Repr
+deriving Repr
 
--- instance : DecidableEq Name := String.decEq
+abbrev Exp.is_value (e : Exp) : Prop := ∃ x, ∃ e₁, e = Exp.lam x e₁
+
+inductive LContext where
+| hole : LContext
+| app : LContext → Name → LContext
+| lam : Name → LContext → LContext
+| let_body : Name → Exp → LContext → LContext
+| let_rhs : Name → LContext → Exp → LContext
+deriving Repr
 
 declare_syntax_cat exp
 syntax:max ident : exp
@@ -57,3 +71,25 @@ macro_rules
 
 example := [exp| let id := fun x => x; id id |]
 example := [exp| let id := (fun x y => y) id; id |]
+
+declare_syntax_cat ctx
+syntax:max "□" : ctx
+syntax "(" ctx ")" : ctx
+syntax:arg ctx:arg ident : ctx
+syntax:max "fun" ident+ " => " ctx:arg : ctx
+syntax:max "let" ident " := " ctx "; " exp : ctx
+syntax:max "let" ident " := " exp "; " ctx : ctx
+syntax "[ctx|" ctx "|]" : term
+
+open Lean in
+macro_rules
+  | `([ctx| ($K) |]) => `([ctx| $K |])
+  | `([ctx| □ |]) => `(LContext.hole)
+  | `([ctx| $K $x |]) => `(LContext.app [ctx| $K |] $(quote x.getId.toString))
+  | `([ctx| fun $x => $K |]) => `(LContext.lam $(quote x.getId.toString) [ctx| $K |])
+  | `([ctx| fun $x $ys => $K |]) => `(LContext.lam $(quote x.getId.toString) [ctx| fun $ys => $K |])
+  | `([ctx| let $x := $K:ctx; $e:exp |]) => `(LContext.let_rhs $(quote x.getId.toString) [ctx| $K |] [exp| $e |])
+  | `([ctx| let $x := $e:exp; $K:ctx |]) => `(LContext.let_body $(quote x.getId.toString) [exp| $e |] [ctx| $K |])
+
+example := [ctx| let id := fun x => x; (fun x => □ id) |]
+example := [ctx| let id := fun x => □; (fun x => id) |]

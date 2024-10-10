@@ -7,8 +7,10 @@ inductive Event where
 
 class Trace (D : Type) (L : outParam (Type → Type)) where
   step : Event → L D → D
+abbrev isStep [Trace D L] (d : D) (ev : Event) : Prop :=
+  ∃ (d' : L D), d = Trace.step ev d'
 abbrev isEnv [Trace D L] (d : D) : Prop :=
-  ∃ (y : Name) (d' : L D), d = Trace.step (Event.look y) d'
+  ∃ (y : Name), isStep d (Event.look y)
 abbrev EnvD D [Trace D L] := Subtype (@isEnv D _ _)
 
 class Domain (D : Type) (L : outParam (Type → Type)) extends Trace D L where
@@ -32,3 +34,15 @@ match e with
       | Option.some d => Trace.step Event.app1 (pure (Domain.ap (eval e ρ) d))
   | Exp.let x e₁ e₂ => HasBind.bind x (λ d₁ => eval e₁ (ρ[x↦⟨Trace.step (Event.look x) d₁, _, _, rfl⟩]))
                                       (λ d₁ => Trace.step Event.let1 (pure (eval e₂ (ρ[x↦⟨Trace.step (Event.look x) d₁, _, _, rfl⟩]))))
+
+def evalK {D : Type} {L : outParam (Type → Type)} [Applicative L] [Domain D L] [HasBind D L] (K : LContext) (S : FinMap Name (EnvD D) -> D) (ρ : FinMap Name (EnvD D)) : D :=
+match K with
+  | LContext.hole => S ρ
+  | LContext.lam x K => Domain.fn (λ d => Trace.step Event.app2 (pure (evalK K S (ρ[x↦d]))))
+  | LContext.app K x => match AList.lookup x ρ with
+      | Option.none   => Domain.stuck
+      | Option.some d => Trace.step Event.app1 (pure (Domain.ap (evalK K S ρ) d))
+  | LContext.let_body x e K => HasBind.bind x (λ d₁ => eval e (ρ[x↦⟨Trace.step (Event.look x) d₁, _, _, rfl⟩]))
+                                              (λ d₁ => Trace.step Event.let1 (pure (evalK K S (ρ[x↦⟨Trace.step (Event.look x) d₁, _, _, rfl⟩]))))
+  | LContext.let_rhs x K e => HasBind.bind x (λ d₁ => evalK K S (ρ[x↦⟨Trace.step (Event.look x) d₁, _, _, rfl⟩]))
+                                             (λ d₁ => Trace.step Event.let1 (pure (eval e (ρ[x↦⟨Trace.step (Event.look x) d₁, _, _, rfl⟩]))))
