@@ -42,6 +42,8 @@ axiom DLater : ▹ (Sort u) → Sort u
 axiom DLater.next_eq {α : Sort u} : ▹ α = DLater (next[].α)
 notation "▸ " α:100 => DLater α
 
+axiom Later.ext {α : Sort u} {a b : ▹ α} :  DLater (next[a ← a, b ← b]. a = b) → a = b
+
 -- Some perhaps more controversial definitions:
 @[extern "igdtt_flip"]
 axiom Later.unsafeFlip {α β : Type u} : (α → Later β) → Later (α → β)
@@ -49,3 +51,4 @@ axiom Later.unsafeFlip_eq {α β : Type u} (f : α → Later β) (μ : α) : Lat
 
 @[extern "igdtt_force"]
 axiom Later.unsafeForce {α : Sort u} : ▹ α → α -- highly unsafe! Need to recall from Barr's work when exactly this is safe. Probably needs support from the typechecker
+axiom Later.unsafeForce.eq {α : Sort u} {a : α} : unsafeForce (next[]. a) = a

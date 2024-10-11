@@ -58,7 +58,9 @@ theorem T.ne_ret_step : ¬ (T.ret a = T.step e tl) := by unfold T.ret T.step; si
 theorem T.confuse_ret : T.ret a1 = T.ret a2 → a1 = a2 := by unfold T.ret; simp
 theorem T.confuse_step1 : T.step e1 tl1 = T.step e2 tl2 → e1 = e2 := by unfold T.step; simp_all
 theorem T.confuse_step2 : T.step e1 tl1 = T.step e2 tl2 → tl1 = tl2 := by unfold T.step; simp
-theorem T.ret_eq : T.ret e₁ tl₁ = T.ret e₂ tl₂ ↔ e₁ = e₂ ∧ ▹ tl₁ = tl₂ := sorry
+@[simp]
+theorem T.step_eq : T.step e₁ tl₁ = T.step e₂ tl₂ ↔ e₁ = e₂ ∧ tl₁ = tl₂ := by
+  unfold T.step; simp_all
 
 def T.bind {α β} (t : T α) (k : α → T β) : T β :=
   let loop loop' t : T β := match cast T.unfold t with

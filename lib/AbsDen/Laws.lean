@@ -107,8 +107,12 @@ abbrev DefiHeap := FinMap Addr DefiD
 abbrev DefiHeap.μ (μ : DefiHeap) : Heap := FinMap.map_with_key (fun a d => memo a (next[]. d.d)) μ
 abbrev DefiHeap.dom (μ : DefiHeap) : Set Addr := fun a => a ∈ μ.keys
 
-abbrev T.steps (ev : List Event) (t : T (Heap × Value)) : T (Heap × Value) :=
+def T.steps (ev : List Event) (t : T (Heap × Value)) : T (Heap × Value) :=
   List.foldr (fun e t => T.step e (next[]. t)) t ev
+@[simp]
+lemma T.steps_nil : T.steps [] d = d := by unfold T.steps; simp
+@[simp]
+lemma T.steps_cons : T.steps (e::ev) d = T.step e (next[]. T.steps ev d) := by unfold T.steps; simp
 
 structure BalancedExec (d₁ : DefiD) (μ₁ : DefiHeap) (d₂ : DefiD) (μ₂ : DefiHeap) where
   mk ::
@@ -129,22 +133,23 @@ lemma eval_deterministic : <⟨e,ρ₁⟩,μ₁>⇓<⟨e₂,ρ₂⟩,μ₂> → 
 
 lemma ne_steps_fun_stuck :
   ∀ ev₁ ev₂ μ₁ μ₂ g, T.steps ev₁ ((instDomainD.fn g).f μ₁) ≠ T.steps ev₂ (instDomainD.stuck.f μ₂)
-:= gfix fun hind => by
+:= by
   intro ev₁ ev₂ _ _ _
-  unfold T.steps;
-  cases ev₁
+  induction ev₁ generalizing ev₂
   case nil =>
     cases ev₂
     case nil => exact D.ne_stuck_fn ∘ Eq.symm
     case cons => unfold instDomainD Domain.fn; simp; exact T.ne_ret_step
-  case cons hd tl =>
+  case cons _ ev₁' hind =>
     cases ev₂
     case nil => unfold instDomainD Domain.fn; simp; exact (T.ne_ret_step ∘ Eq.symm)
-    case cons => simp; intro h; have := T.confuse_step2 h; exact hind h; sorry
+    case cons _ ev₂' =>
+      simp;
+      intro _ h;
+      have h := Later.unsafeForce.eq ▸ Later.unsafeForce.eq ▸ congrArg Later.unsafeForce h
+      apply hind ev₂' h
 
-  sorry
-
-lemma balanaced_not_stuck (hbal : <⟨e,ρ₁⟩,μ₁>⇓<⟨v,ρ₂⟩,μ₂>) (hstuck : StuckExec ⟨e,ρ₁⟩ μ₁) : False := gfix fun hind =>by
+lemma balanaced_not_stuck (hbal : <⟨e,ρ₁⟩,μ₁>⇓<⟨v,ρ₂⟩,μ₂>) (hstuck : StuckExec ⟨e,ρ₁⟩ μ₁) : False := by
   have ⟨bal_events, ⟨x,e',hval⟩, bal_property⟩ := hbal
   simp at hval
   rw[hval] at bal_property
@@ -171,7 +176,9 @@ inductive HeapProgression : DefiHeap → DefiHeap → Prop where
 notation μ₁ " ↝ " μ₂ => HeapProgression μ₁ μ₂
 
 lemma eval_progesses_heap : <⟨e,ρ₁⟩,μ₁>⇓<⟨v,ρ₂⟩,μ₂> → μ₁ ↝ μ₂ := gfix fun hind hevals => by
-  have ⟨events, is_value, property⟩ := hevals
+  have ⟨events, ⟨x,e',hval⟩, property⟩ := hevals
+  simp at hval
+  rw[hval] at property
   unfold DefiD.d evalByNeed eval at *
   simp at *
   cases e
