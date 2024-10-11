@@ -39,6 +39,7 @@ protected theorem T.recOn_cast.{v,u} {α : Type u} {motive : T α  → Sort v} {
   : (cast h.symm (cast h t)).recOn (motive:=motive) r s
   = cast (congrArg motive (by simp : t = cast h.symm (cast h t))) (t.recOn (motive:=motive) r s)
   := by cases h; rfl
+@[simp]
 protected theorem T.recOn_rw.{v,u} {α : Type u} {motive : T α  → Sort v} {r s τ1 τ2} (h : τ1 = τ2)
   : τ1.recOn (motive:=motive) r s
   = cast (congrArg motive h.symm) (τ2.recOn (motive:=motive) r s)
@@ -57,6 +58,7 @@ theorem T.ne_ret_step : ¬ (T.ret a = T.step e tl) := by unfold T.ret T.step; si
 theorem T.confuse_ret : T.ret a1 = T.ret a2 → a1 = a2 := by unfold T.ret; simp
 theorem T.confuse_step1 : T.step e1 tl1 = T.step e2 tl2 → e1 = e2 := by unfold T.step; simp_all
 theorem T.confuse_step2 : T.step e1 tl1 = T.step e2 tl2 → tl1 = tl2 := by unfold T.step; simp
+theorem T.ret_eq : T.ret e₁ tl₁ = T.ret e₂ tl₂ ↔ e₁ = e₂ ∧ ▹ tl₁ = tl₂ := sorry
 
 def T.bind {α β} (t : T α) (k : α → T β) : T β :=
   let loop loop' t : T β := match cast T.unfold t with
@@ -70,6 +72,9 @@ instance instTraceT : Trace (T α) Later where
 instance : Monad T where
   pure := T.ret
   bind := T.bind
+
+theorem T.confuse_pure : instMonadT.pure a = instMonadT.pure b → a = b := by
+  unfold pure instMonadT; simp; exact T.confuse_ret
 
 -- Convention: p is the inductive recursion variable, n is the guarded one.
 --             So ultimately, p will be instantiated with D, while n will be instantiated with ▹ D.
@@ -105,6 +110,8 @@ abbrev Heap := Heap.F (▹ D)
 abbrev Value := Value.F D (▹ D)
 abbrev Value.stuck : Value := Value.F.stuck
 abbrev Value.fun (f : Name → ▹ D → D) : Value := Value.F.fun f
+theorem Value.confuse_fun : Value.fun f₁ = Value.fun f₂ → f₁ = f₂ := by intro h; injection h
+theorem Value.ne_stuck_fun : Value.fun f ≠ Value.stuck := by intro h; injection h
 
 abbrev ByNeed α := ByNeed.F (▹ D) α
 
@@ -143,6 +150,7 @@ def D.step (e : Event) (tl : ▹ D) : D := D.mk fun μ => T.step e (next[d ← t
 
 instance instTraceD : Trace D Later where
   step := D.step
+instance : Inhabited D where default := D.ret Value.stuck
 
 @[simp]
 theorem D.step_f : (Trace.step e tl).f μ = Trace.step e (next[d:D ← tl]. d.f μ) := by
@@ -202,6 +210,7 @@ theorem EnvD.iso (d : EnvD D) : d.val = D.step (Event.look d.name) d.tl := D.ext
     rw[T.recOn_rw hemp]
     rw[help3 (by unfold EnvD.proj_pre; simp[hemp]) rfl]
     simp
+    sorry
   have htl : tl = d.tl := by
     unfold EnvD.tl
     simp
@@ -223,8 +232,16 @@ theorem ByNeed.pure_f : (pure v : ByNeed α).f μ = pure ⟨μ, v⟩ := by
   unfold pure instMonadByNeed instMonadT; simp
 
 @[simp]
-theorem ByNeed.confuse_pure : instMonadByNeed.pure a = pure b → a = b := by
-  unfold pure instMonadByNeed instMonadT ByNeed.mk T.ret; simp;
+theorem D.pure_f : (cast D.eq.symm m).f μ = m.f μ := by unfold D.f; simp
+
+theorem ByNeed.confuse_pure : instMonadByNeed.pure a = instMonadByNeed.pure b → a = b := by
+  unfold pure instMonadByNeed ByNeed.mk; simp;
+  intro h
+  let μ : Heap := default
+  have : (μ,a) = (μ,b) := by
+    apply T.confuse_ret
+    exact congrFun h μ
+  injection this
 
 instance instDomainD : Domain D Later where
   stuck := cast D.eq.symm <| pure Value.stuck
@@ -235,10 +252,21 @@ instance instDomainD : Domain D Later where
     | .fun f => f (EnvD.name a) (EnvD.tl a)
     | _      => pure Value.stuck
 
+theorem D.confuse_fn : instDomainD.fn f₁ = instDomainD.fn f₂ → f₁ = f₂ := by
+  unfold Domain.fn instDomainD; simp;
+  intro h
+  ext d
+  obtain ⟨_,x,d,hd⟩ := d
+  cases hd
+  exact congrFun (congrFun (Value.confuse_fun (ByNeed.confuse_pure h)) x) d
+
 @[simp]
-theorem D.stuck_ne_fn : Domain.stuck ≠ (Domain.fn g : D) := by
-  unfold Domain.stuck Domain.fn instDomainD; simp
-  sorry
+theorem D.ne_stuck_fn : instDomainD.stuck.f μ₁ ≠ (instDomainD.fn g).f μ₂ := by
+  unfold Domain.stuck Domain.fn instDomainD
+  simp
+  intro h
+  have := T.confuse_pure h
+  simp_all
 
 abbrev is_allocator (f : Heap → Addr) := ∀ μ, f μ ∉ μ
 

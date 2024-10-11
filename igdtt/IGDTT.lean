@@ -19,6 +19,9 @@ axiom gfix.unfold {α : Sort u} (f : Later α -> α) : gfix f = f (Later.next (f
 
 notation "▹ " α:100 => Later α
 
+instance [Inhabited α] : Inhabited (Later α) where
+  default := Later.next (fun () => default)
+
 declare_syntax_cat nextElem
 syntax (name := nextElem) ident Term.optType ppSpace Term.leftArrow term : nextElem
 syntax (name := delayedSubst) "next[" nextElem,* "]." term : term

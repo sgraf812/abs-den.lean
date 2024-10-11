@@ -5,6 +5,8 @@ import Mathlib.Order.FixedPoints
 
 namespace AbsDen
 
+open IGDTT
+
 instance [CompleteLattice A] : CompleteLattice (@Subtype A p) := sorry
 
 abbrev idd := fun (x : Type) => x
@@ -105,35 +107,51 @@ abbrev DefiHeap := FinMap Addr DefiD
 abbrev DefiHeap.μ (μ : DefiHeap) : Heap := FinMap.map_with_key (fun a d => memo a (next[]. d.d)) μ
 abbrev DefiHeap.dom (μ : DefiHeap) : Set Addr := fun a => a ∈ μ.keys
 
+abbrev T.steps (ev : List Event) (t : T (Heap × Value)) : T (Heap × Value) :=
+  List.foldr (fun e t => T.step e (next[]. t)) t ev
+
 structure BalancedExec (d₁ : DefiD) (μ₁ : DefiHeap) (d₂ : DefiD) (μ₂ : DefiHeap) where
   mk ::
   events : List Event
   is_value : d₂.e.is_value
-  property : d₁.d.f μ₁.μ = List.foldr (fun ev τ => T.step ev (next[]. τ)) (d₂.d.f μ₂.μ) events
+  property : d₁.d.f μ₁.μ = T.steps events (d₂.d.f μ₂.μ)
 
 structure StuckExec (d₁ : DefiD) (μ₁ : DefiHeap) where
   mk ::
   events : List Event
   μ₂ : DefiHeap
-  property : d₁.d.f μ₁.μ = List.foldr (fun ev τ => T.step ev (next[]. τ)) ((Domain.stuck : D).f μ₂.μ) events
+  property : d₁.d.f μ₁.μ = T.steps events ((Domain.stuck : D).f μ₂.μ)
 
 notation:max "<" e₁:max "," μ₁:max ">⇓<" e₂:max "," μ₂:max ">" => BalancedExec e₁ μ₁ e₂ μ₂
 
 lemma eval_deterministic : <⟨e,ρ₁⟩,μ₁>⇓<⟨e₂,ρ₂⟩,μ₂> → <⟨e₁,ρ₁⟩,μ₁>⇓<⟨e₃,ρ₃⟩,μ₃> → e₂ = e₃ ∧ ρ₂ = ρ₃ ∧ μ₂ = μ₃ :=
   sorry
 
-lemma balanaced_not_stuck (hbal : <⟨e,ρ₁⟩,μ₁>⇓<⟨v,ρ₂⟩,μ₂>) (hstuck : StuckExec ⟨e,ρ₁⟩ μ₁) : False := by
+lemma ne_steps_fun_stuck :
+  ∀ ev₁ ev₂ μ₁ μ₂ g, T.steps ev₁ ((instDomainD.fn g).f μ₁) ≠ T.steps ev₂ (instDomainD.stuck.f μ₂)
+:= gfix fun hind => by
+  intro ev₁ ev₂ _ _ _
+  unfold T.steps;
+  cases ev₁
+  case nil =>
+    cases ev₂
+    case nil => exact D.ne_stuck_fn ∘ Eq.symm
+    case cons => unfold instDomainD Domain.fn; simp; exact T.ne_ret_step
+  case cons hd tl =>
+    cases ev₂
+    case nil => unfold instDomainD Domain.fn; simp; exact (T.ne_ret_step ∘ Eq.symm)
+    case cons => simp; intro h; have := T.confuse_step2 h; exact hind h; sorry
+
+  sorry
+
+lemma balanaced_not_stuck (hbal : <⟨e,ρ₁⟩,μ₁>⇓<⟨v,ρ₂⟩,μ₂>) (hstuck : StuckExec ⟨e,ρ₁⟩ μ₁) : False := gfix fun hind =>by
   have ⟨bal_events, ⟨x,e',hval⟩, bal_property⟩ := hbal
   simp at hval
   rw[hval] at bal_property
   have ⟨stuck_events, μ₃, stuck_property⟩ := hstuck
-  absurd bal_property.symm.trans stuck_property
-  induction bal_events
-  case nil => unfold DefiD.d evalByNeed eval Domain.fn instDomainD; simp; sorry
-  case cons => sorry
-  unfold DefiD.d evalByNeed eval at *
-  simp at stuck_property bal_property
-  sorry
+  have h := bal_property.symm.trans stuck_property
+  apply ne_steps_fun_stuck
+  assumption
 
 inductive HeapProgression : DefiHeap → DefiHeap → Prop where
 | refl : ---------------------
@@ -151,8 +169,6 @@ inductive HeapProgression : DefiHeap → DefiHeap → Prop where
                          HeapProgression μ₁ μ₂[a↦⟨v,ρ₂⟩]
 
 notation μ₁ " ↝ " μ₂ => HeapProgression μ₁ μ₂
-
-open IGDTT
 
 lemma eval_progesses_heap : <⟨e,ρ₁⟩,μ₁>⇓<⟨v,ρ₂⟩,μ₂> → μ₁ ↝ μ₂ := gfix fun hind hevals => by
   have ⟨events, is_value, property⟩ := hevals
