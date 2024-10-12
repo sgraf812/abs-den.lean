@@ -33,10 +33,14 @@ macro_rules
   | `(term| next[ $x:ident : $t ← $e₁, $es,* ]. $e₂) => `(Later.ap (next[ $es,* ]. (fun $x : $t => $e₂)) $e₁)
 
 axiom Later.eq {α : Sort u} {a b : α} : ▹ (a = b) ↔ (next[].a) = (next[].b)
+@[simp]
 axiom Later.ap.compute {α β : Sort u} (f : α → β) (a : α) : Later.ap (next[].f) (next[].a) = next[].(f a)
+@[simp]
 axiom Later.ap.assoc1 {α β : Sort u} (f : α → β) (a : α) : Later.ap (next[].f) (next[].a) = next[].(f a)
+@[simp]
 axiom Later.ap.assoc2 {α β γ : Sort u} (f : α → β) (g : β → γ) (la : ▹ α) : Later.ap (next[].g) (Later.ap (next[].f) la) = Later.ap (next[]. fun a => g (f a)) la
-axiom Later.ap.id {α : Sort u} {β : Sort v} (f : α → β) (a : ▹ α) : Later.ap (next[].id) a = a
+@[simp]
+axiom Later.ap_id {α : Sort u} {β : Sort v} (f : α → β) (a : ▹ α) : Later.ap (next[].id) a = a
 
 axiom DLater : ▹ (Sort u) → Sort u
 axiom DLater.next_eq {α : Sort u} : ▹ α = DLater (next[].α)
@@ -51,4 +55,4 @@ axiom Later.unsafeFlip_eq {α β : Type u} (f : α → Later β) (μ : α) : Lat
 
 @[extern "igdtt_force"]
 axiom Later.unsafeForce {α : Sort u} : ▹ α → α -- highly unsafe! Need to recall from Barr's work when exactly this is safe. Probably needs support from the typechecker
-axiom Later.unsafeForce.eq {α : Sort u} {a : α} : unsafeForce (next[]. a) = a
+axiom Later.unsafeForce_eq {α : Sort u} {a : α} : unsafeForce (next[]. a) = a

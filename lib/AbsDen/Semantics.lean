@@ -25,13 +25,9 @@ class HasBind (d : Type) (L : outParam (Type → Type)) where
 
 def eval {D : Type} {L : outParam (Type → Type)} [Applicative L] [Domain D L] [HasBind D L] (e : Exp) (ρ : FinMap Name (EnvD D)) : D :=
 match e with
-  | Exp.var x => match AList.lookup x ρ with
-      | Option.none   => Domain.stuck
-      | Option.some d => d
+  | Exp.var x => if _ : x ∈ ρ then ρ[x] else Domain.stuck
   | Exp.lam x e => Domain.fn (λ d => Trace.step Event.app2 (pure (eval e (ρ[x↦d]))))
-  | Exp.app e x => match AList.lookup x ρ with
-      | Option.none   => Domain.stuck
-      | Option.some d => Trace.step Event.app1 (pure (Domain.ap (eval e ρ) d))
+  | Exp.app e x => if _ : x ∈ ρ then Trace.step Event.app1 (pure (Domain.ap (eval e ρ) ρ[x])) else Domain.stuck
   | Exp.let x e₁ e₂ => HasBind.bind x (λ d₁ => eval e₁ (ρ[x↦⟨Trace.step (Event.look x) d₁, _, _, rfl⟩]))
                                       (λ d₁ => Trace.step Event.let1 (pure (eval e₂ (ρ[x↦⟨Trace.step (Event.look x) d₁, _, _, rfl⟩]))))
 

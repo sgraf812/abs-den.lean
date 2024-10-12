@@ -78,6 +78,10 @@ instance : Monad T where
 theorem T.confuse_pure : instMonadT.pure a = instMonadT.pure b → a = b := by
   unfold pure instMonadT; simp; exact T.confuse_ret
 
+@[simp]
+theorem D.step_eq : instTraceT.step e₁ tl₁ = instTraceT.step e₂ tl₂ ↔ e₁ = e₂ ∧ tl₁ = tl₂ := by
+  unfold Trace.step instTraceT; simp
+
 -- Convention: p is the inductive recursion variable, n is the guarded one.
 --             So ultimately, p will be instantiated with D, while n will be instantiated with ▹ D.
 abbrev Heap.F (n : Type) := FinMap Nat n
@@ -159,13 +163,13 @@ theorem D.step_f : (Trace.step e tl).f μ = Trace.step e (next[d:D ← tl]. d.f 
   unfold Trace.step instTraceD instTraceT D.step; simp
 
 theorem EnvD.property_f (d : EnvD D) (μ : Heap) :
-  ∃ (x:Name) (tl: ▹ D), d.val.f μ = T.step (Event.look x) (next[d' : D ← tl]. d'.f μ)
+  ∃ (x:Name) (tl: ▹ D), d.val.f μ = Trace.step (Event.look x) (next[d' : D ← tl]. d'.f μ)
 := by
   have ⟨x,tl,h⟩ := d.property
   exact ⟨x,tl, by rw[h]; exact D.step_f⟩
 
 protected def EnvD.proj_pre (τ : T (Heap × Value)) (μ : Heap) :
-  Prop := ∃ (x:Name) (tl: ▹ D), τ = T.step (Event.look x) (next[d' : D ← tl]. d'.f μ)
+  Prop := ∃ (x:Name) (tl: ▹ D), τ = Trace.step (Event.look x) (next[d' : D ← tl]. d'.f μ)
 
 def EnvD.name (d : EnvD D) : Name :=
   (d.val.f {}).recOn (motive:= fun τ => (EnvD.proj_pre τ {}) -> Name)
@@ -200,29 +204,36 @@ theorem help {a : α} (h : β = α) : (cast (congrArg (· → γ) h) f) a = f (c
 @[simp]
 theorem help2 {a : γ} (h : β = α) : (cast (congrArg (γ → ·) h) f) a = cast h (f a) := by simp[help3 rfl h]
 
-theorem EnvD.iso (d : EnvD D) : d.val = D.step (Event.look d.name) d.tl := D.ext <| funext fun μ => by
+@[simp]
+theorem EnvD.iso (d : EnvD D) : d.val = Trace.step (Event.look d.name) d.tl := D.ext <| funext fun μ => by
   --unfold EnvD.name
   --simp
   have ⟨x, tl, h⟩ := d.property
   have hμ := congrArg (fun d => d.f μ) h
   have hemp := congrArg (fun d => d.f {}) h
-  simp[instTraceD] at *
   have hx : x = d.name := by
     unfold EnvD.name
     rw[T.recOn_rw hemp]
-    rw[help3 (by unfold EnvD.proj_pre; simp[hemp]) rfl]
+    rw[T.recOn_rw D.step_f]
+    unfold Trace.step instTraceT EnvD.proj_pre
     simp
-    sorry
+    rw[help (f := fun h => x)]
+    rw[h]
+    unfold Trace.step instTraceT instTraceD D.step
+    simp
   have htl : tl = d.tl := by
     unfold EnvD.tl
     simp
+    apply Later.ext
+    simp
+    -- This is hard and tedious to prove, and perhaps utlimately unnecessary. Postpone
+    --  unfold instApplicativeLater D.mk
+    --  set_option trace.Meta.Tactic.simp true in
+    --rw[D.ext]
+    --rw[Later.unsafeFlip_eq]
+    --unfold instApplicativeLater D.mk
     sorry
-  -- This is hard and tedious to prove, and perhaps utlimately unnecessary. Postpone
-  --  unfold instApplicativeLater D.mk
-  --  rw[Later.unsafeFlip_eq]
-  --  set_option trace.Meta.Tactic.simp true in
-  --  simp only[(T.recOn_rw hμ)]
-  rw[hμ, hx, htl]
+  rw[h, hx, htl]
 
 instance instMonadByNeed : Monad ByNeed where
   pure a := ByNeed.mk fun μ => T.ret ⟨μ, a⟩
@@ -269,6 +280,18 @@ theorem D.ne_stuck_fn : instDomainD.stuck.f μ₁ ≠ (instDomainD.fn g).f μ₂
   intro h
   have := T.confuse_pure h
   simp_all
+
+@[simp]
+theorem D.ne_step_fn : instTraceT.step e d ≠ (instDomainD.fn g).f μ₂ := by
+  unfold Domain.fn instDomainD Trace.step instTraceT
+  simp
+  apply T.ne_ret_step ∘ Eq.symm
+
+@[simp]
+theorem D.ne_step_stuck : instTraceT.step e d ≠ instDomainD.stuck.f μ₂ := by
+  unfold Domain.stuck instDomainD Trace.step instTraceT
+  simp
+  apply T.ne_ret_step ∘ Eq.symm
 
 abbrev is_allocator (f : Heap → Addr) := ∀ μ, f μ ∉ μ
 
