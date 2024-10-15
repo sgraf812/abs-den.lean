@@ -314,15 +314,22 @@ theorem nextFree_is_allocator : is_allocator nextFree := by
 
 def fetch (a : Nat) : ▹ D :=
   next[f ← Later.unsafeFlip fun (μ : Heap) =>
-    match AList.lookup a μ with
-    | .some ld => next[d ← ld]. d.f μ
-    | .none    => next[]. T.ret ⟨μ, Value.stuck⟩]. D.mk f
+    if _ : a ∈ μ
+    then next[d ← μ[a]]. d.f μ
+    else next[]. pure ⟨μ, Value.stuck⟩]. D.mk f
+
+@[simp]
+theorem fetch.eq1 (h : a ∈ μ) : (next[d ← fetch a]. d.f μ) = (next[d ← μ[a]]. d.f μ) := by
+  unfold fetch; simp; rw[Later.unsafeFlip_eq]; simp[h]
+@[simp]
+theorem fetch.eq2 (h : a ∉ μ) : (next[d ← fetch a]. d.f μ) = (next[]. instDomainD.stuck.f μ) := by
+  unfold fetch Domain.stuck instDomainD; simp; rw[Later.unsafeFlip_eq]; simp[h]
 
 def stepLookFetch (x : Name) (a : Nat) : D :=
   D.mk fun μ =>
-    match AList.lookup a μ with
-    | .some ld => Trace.step (Event.look x) (next[d ← ld]. d.f μ)
-    | .none    => Trace.step (Event.look x) (next[]. T.ret ⟨μ, Value.stuck⟩)
+    if _ : a ∈ μ
+    then Trace.step (Event.look x) (next[d ← μ[a]]. d.f μ)
+    else Trace.step (Event.look x) (next[]. pure ⟨μ, Value.stuck⟩)
 
 -- the following theorem is important to get rid of the unsafeFlip in fetch:
 theorem stepLook_fetch_eq_stepLookFetch
