@@ -16,6 +16,8 @@ def FinMap.map_with_key [DecidableEq k] (f : k → a → b) (m : FinMap k a) : F
   for ⟨k,v⟩ in m.entries do
     res := res[k↦f k v]
   pure res
+theorem FinMap.dom_map_with_key [DecidableEq key] {k : key} {f : key → a → b} {m : FinMap key a} :
+    k ∈ m ↔ k ∈ map_with_key f m := sorry
 
 def FinMap.unionWith [DecidableEq k] (merge : v → v → v) (l : FinMap k v) (r : FinMap k v) : FinMap k v := Id.run do
   let mut res := l
@@ -26,7 +28,7 @@ def FinMap.unionWith [DecidableEq k] (merge : v → v → v) (l : FinMap k v) (r
   pure res
 
 instance [CompleteLattice v] : CompleteLattice (FinMap k v) := sorry
-instance [DecidableEq k] : GetElem (FinMap k v) k v Membership.mem where
+instance instFinMapGetElem [DecidableEq k] : GetElem (FinMap k v) k v Membership.mem where
   getElem m k h := match AList.lookup k m, AList.lookup_isSome.mpr h with
   | .some v, _ => v
 

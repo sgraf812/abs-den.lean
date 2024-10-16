@@ -273,6 +273,12 @@ theorem D.confuse_fn : instDomainD.fn f₁ = instDomainD.fn f₂ → f₁ = f₂
   cases hd
   exact congrFun (congrFun (Value.confuse_fun (ByNeed.confuse_pure h)) x) d
 
+theorem D.confuse_fn_heap : (instDomainD.fn f₁).f μ₁ = (instDomainD.fn f₂).f μ₂ → μ₁ = μ₂ := by
+  unfold Domain.fn instDomainD; simp;
+  intro h
+  have := T.confuse_pure h
+  injection this
+
 @[simp]
 theorem D.ne_stuck_fn : instDomainD.stuck.f μ₁ ≠ (instDomainD.fn g).f μ₂ := by
   unfold Domain.stuck Domain.fn instDomainD
