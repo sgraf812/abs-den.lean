@@ -168,6 +168,8 @@ def Repr.is_value (d : DefiD.Repr) : Prop := d.e.is_value
 def is_value : DefiD → Prop := Quotient.lift DefiD.Repr.is_value sorry -- A boring proof utilising that Domain.fn is not Trace.step
 end DefiD
 
+abbrev DefiV := { d : DefiD // d.is_value }
+
 instance : Coe DefiD D where coe := DefiD.d
 
 abbrev DefiHeap.Repr := FinMap Addr DefiD
@@ -184,7 +186,13 @@ def dom : DefiHeap → Set Addr := Quotient.lift DefiHeap.Repr.dom fun a b h => 
   have : x ∈ a.μ ↔ x ∈ b.μ := by rw[h]
   have : x ∈ a ↔ x ∈ b := by rw[FinMap.dom_map_with_key (m:=a), FinMap.dom_map_with_key (m:=b)]; exact this
   exact this
+def replace : Addr → DefiD → DefiHeap → DefiHeap  := sorry
 end DefiHeap
+
+instance instDefiHeapMembership : Membership Addr DefiHeap := ⟨fun μ a => a ∈ μ.μ⟩
+instance instDefiHeapGetElem : GetElem DefiHeap Addr (▹ D) Membership.mem where
+  getElem μ a h := μ.μ[a]
+notation:max f "[" k "↦" v "]" => AList.replace k v f
 
 def Trace.steps (ev : List Event) (t : T (Heap × Value)) : T (Heap × Value) :=
   List.foldr (fun e t => Trace.step e (next[]. t)) t ev
@@ -204,6 +212,9 @@ structure StuckExec (d₁ : DefiD) (μ₁ : DefiHeap) where
   events : List Event
   μ₂ : DefiHeap
   property : d₁.d.f μ₁.μ = Trace.steps events (instDomainD.stuck.f μ₂.μ)
+
+def Triple (P : DefiHeap → Prop) (d : DefiD) (Q : DefiV → DefiHeap → Prop) : Prop :=
+  ∀ μ₁ events μ₂ v, P μ₁ → d.d.f μ₁.μ = Trace.steps events (v.val.d.f μ₂.μ) → Q v μ₂
 
 notation:max "<" e₁:max "," μ₁:max ">⇓<" e₂:max "," μ₂:max ">" => BalancedExec e₁ μ₁ e₂ μ₂
 
@@ -253,6 +264,8 @@ inductive HeapProgression : DefiHeap → DefiHeap → Prop where
                          HeapProgression μ₁ μ₂[a↦⟨v,ρ₂⟩]
 
 notation μ₁ " ↝ " μ₂ => HeapProgression μ₁ μ₂
+
+theorem funny : Triple (· = μ₁) d (fun v μ₂ => μ₁ ↝ μ₂) := sorry
 
 lemma eval_progesses_heap : <⟨e,ρ₁⟩,μ₁>⇓<⟨v,ρ₂⟩,μ₂> → μ₁ ↝ μ₂ := gfix fun hind hevals => by
   have ⟨events, ⟨z,e',hval⟩, property⟩ := hevals
